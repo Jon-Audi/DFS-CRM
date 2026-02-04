@@ -15,10 +15,29 @@ A full-stack web application for managing contractor relationships, tracking out
 ## Technology Stack
 
 - **Backend**: Node.js + Express.js
-- **Database**: SQLite (can be upgraded to PostgreSQL)
+- **Database**: SQLite (default) or Supabase PostgreSQL (recommended for production)
 - **Frontend**: React (via CDN)
 - **Authentication**: JWT (JSON Web Tokens)
 - **Styling**: Tailwind CSS
+- **Deployment**: Vercel (with Supabase backend)
+
+## Database Options
+
+### SQLite (Default / Development)
+- Local file storage (`crm.db`)
+- No setup required
+- Single-user friendly
+- Use: `npm start` (uses `server.js`)
+
+### Supabase PostgreSQL (Recommended / Production) ⭐
+- Cloud-hosted PostgreSQL database
+- Scalable to 1000s of concurrent users
+- Automatic backups and monitoring
+- Ready for serverless deployment (Vercel, etc.)
+- **Setup**: Read [SUPABASE-SETUP.md](SUPABASE-SETUP.md) (~15 min)
+- Use: `npm start` (uses `server-supabase.js` after setup)
+
+**What's New:** This application now supports both SQLite and Supabase! See [MIGRATION-GUIDE.md](MIGRATION-GUIDE.md) for details.
 
 ## Installation
 
