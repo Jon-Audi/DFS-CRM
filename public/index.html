@@ -1,0 +1,2051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delaware Fence Solutions - CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class'
+    }
+  </script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .tab-active { border-bottom: 3px solid #2563eb; color: #2563eb; font-weight: 600; }
+    .dark .tab-active { border-bottom: 3px solid #60a5fa; color: #60a5fa; }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // API Configuration
+    const API_URL = window.location.origin + '/api';
+    
+    // API Helper Functions
+    const api = {
+      getToken: () => localStorage.getItem('token'),
+      setToken: (token) => localStorage.setItem('token', token),
+      clearToken: () => localStorage.removeItem('token'),
+      
+      getHeaders: () => ({
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${api.getToken()}`
+      }),
+      
+      async request(endpoint, options = {}) {
+        const response = await fetch(`${API_URL}${endpoint}`, {
+          ...options,
+          headers: api.getHeaders()
+        });
+        
+        if (response.status === 401) {
+          api.clearToken();
+          window.location.reload();
+        }
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Request failed');
+        }
+        
+        return data;
+      },
+      
+      // Auth
+      login: (username, password) =>
+        fetch(`${API_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        }).then(r => r.json()),
+      
+      register: (username, password, name, role) =>
+        fetch(`${API_URL}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, name, role })
+        }).then(r => r.json()),
+      
+      // Companies
+      getCompanies: () => api.request('/companies'),
+      createCompany: (company) => api.request('/companies', {
+        method: 'POST',
+        body: JSON.stringify(company)
+      }),
+      updateCompany: (id, company) => api.request(`/companies/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(company)
+      }),
+      deleteCompany: (id) => api.request(`/companies/${id}`, { method: 'DELETE' }),
+      
+      // Employees
+      getEmployees: () => api.request('/employees'),
+      createEmployee: (employee) => api.request('/employees', {
+        method: 'POST',
+        body: JSON.stringify(employee)
+      }),
+      updateEmployee: (id, employee) => api.request(`/employees/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(employee)
+      }),
+      deleteEmployee: (id) => api.request(`/employees/${id}`, { method: 'DELETE' }),
+      
+      // Activities
+      getActivities: () => api.request('/activities'),
+      createActivity: (activity) => api.request('/activities', {
+        method: 'POST',
+        body: JSON.stringify(activity)
+      }),
+      deleteActivity: (id) => api.request(`/activities/${id}`, { method: 'DELETE' }),
+      
+      // Stats
+      getStats: () => api.request('/stats')
+    };
+
+    function App() {
+      const [isAuthenticated, setIsAuthenticated] = useState(false);
+      const [user, setUser] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [darkMode, setDarkMode] = useState(true);
+
+      useEffect(() => {
+        const token = api.getToken();
+        if (token) {
+          setIsAuthenticated(true);
+        }
+        
+        // Load dark mode preference (default to true)
+        const savedDarkMode = localStorage.getItem('darkMode');
+        const isDark = savedDarkMode === null ? true : savedDarkMode === 'true';
+        setDarkMode(isDark);
+        if (isDark) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        
+        setLoading(false);
+      }, []);
+
+      const toggleDarkMode = () => {
+        const newDarkMode = !darkMode;
+        setDarkMode(newDarkMode);
+        localStorage.setItem('darkMode', newDarkMode.toString());
+        if (newDarkMode) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      };
+
+      const handleLogin = (userData) => {
+        api.setToken(userData.token);
+        setUser(userData.user);
+        setIsAuthenticated(true);
+      };
+
+      const handleLogout = () => {
+        api.clearToken();
+        setUser(null);
+        setIsAuthenticated(false);
+      };
+
+      if (loading) {
+        return (
+          <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+            <div className="text-xl text-gray-900 dark:text-gray-100">Loading...</div>
+          </div>
+        );
+      }
+
+      if (!isAuthenticated) {
+        return <LoginPage onLogin={handleLogin} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />;
+      }
+
+      return <MainApp user={user} onLogout={handleLogout} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />;
+    }
+
+    // Login Page Component
+    function LoginPage({ onLogin, darkMode, toggleDarkMode }) {
+      const [username, setUsername] = useState('');
+      const [password, setPassword] = useState('');
+      const [error, setError] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        setLoading(true);
+
+        try {
+          const data = await api.login(username, password);
+          
+          if (data.error) {
+            setError(data.error);
+          } else {
+            onLogin(data);
+          }
+        } catch (err) {
+          setError('Login failed. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 dark:from-gray-800 dark:to-gray-900 relative">
+          <button
+            onClick={toggleDarkMode}
+            className="absolute top-4 right-4 p-2 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-lg hover:shadow-xl transition-shadow"
+            title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {darkMode ? '☀️' : '🌙'}
+          </button>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-md w-full mx-4">
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Delaware Fence Solutions</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">Contractor CRM</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Enter username"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Enter password"
+                  required
+                />
+              </div>
+
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300"
+              >
+                {loading ? 'Logging in...' : 'Login'}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
+              <p>Default credentials:</p>
+              <p className="font-mono">Username: admin / Password: admin123</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Main Application
+    function MainApp({ user, onLogout, darkMode, toggleDarkMode }) {
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [companies, setCompanies] = useState([]);
+      const [employees, setEmployees] = useState([]);
+      const [activities, setActivities] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        loadData();
+      }, []);
+
+      const loadData = async () => {
+        try {
+          const [companiesData, employeesData, activitiesData] = await Promise.all([
+            api.getCompanies(),
+            api.getEmployees(),
+            api.getActivities()
+          ]);
+          
+          setCompanies(companiesData);
+          setEmployees(employeesData);
+          setActivities(activitiesData);
+        } catch (err) {
+          console.error('Failed to load data:', err);
+          alert('Failed to load data. Please refresh the page.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const refreshCompanies = async () => {
+        const data = await api.getCompanies();
+        setCompanies(data);
+      };
+
+      const refreshEmployees = async () => {
+        const data = await api.getEmployees();
+        setEmployees(data);
+      };
+
+      const refreshActivities = async () => {
+        const data = await api.getActivities();
+        setActivities(data);
+      };
+
+      if (loading) {
+        return (
+          <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+            <div className="text-xl text-gray-900 dark:text-gray-100">Loading CRM...</div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+          <header className="bg-blue-600 dark:bg-gray-800 text-white shadow-lg">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+              <div>
+                <h1 className="text-2xl font-bold">Delaware Fence Solutions - CRM</h1>
+                <p className="text-blue-100 dark:text-gray-400 text-sm">Welcome, {user?.name || 'User'}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleDarkMode}
+                  className="p-2 rounded-lg bg-blue-700 dark:bg-gray-700 hover:bg-blue-800 dark:hover:bg-gray-600 transition-colors"
+                  title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                >
+                  {darkMode ? '☀️' : '🌙'}
+                </button>
+                <button
+                  onClick={onLogout}
+                  className="bg-blue-700 dark:bg-gray-700 hover:bg-blue-800 dark:hover:bg-gray-600 px-4 py-2 rounded-lg transition-colors"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
+            <div className="max-w-7xl mx-auto px-4">
+              <div className="flex space-x-8">
+                {['dashboard', 'calling', 'companies', 'activities', 'employees'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`py-4 px-2 border-b-3 transition-colors capitalize ${
+                      activeTab === tab ? 'tab-active' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+                    }`}
+                  >
+                    {tab === 'calling' ? '📞 Calling' : tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </nav>
+
+          <main className="max-w-7xl mx-auto px-4 py-6 dark:text-gray-100">
+            {activeTab === 'dashboard' && (
+              <Dashboard 
+                companies={companies} 
+                activities={activities} 
+                employees={employees}
+                setActiveTab={setActiveTab}
+              />
+            )}
+            {activeTab === 'calling' && (
+              <Calling 
+                companies={companies}
+                employees={employees}
+                onActivityAdded={refreshActivities}
+                onCompanyUpdated={refreshCompanies}
+              />
+            )}
+            {activeTab === 'companies' && (
+              <Companies 
+                companies={companies}
+                activities={activities}
+                employees={employees}
+                onRefresh={refreshCompanies}
+                onActivityAdded={refreshActivities}
+              />
+            )}
+            {activeTab === 'activities' && (
+              <Activities 
+                activities={activities}
+                companies={companies}
+                employees={employees}
+                onRefresh={refreshActivities}
+              />
+            )}
+            {activeTab === 'employees' && (
+              <Employees 
+                employees={employees}
+                onRefresh={refreshEmployees}
+              />
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    // Calling Component
+    function Calling({ companies, employees, onActivityAdded, onCompanyUpdated }) {
+      const [currentIndex, setCurrentIndex] = useState(0);
+      const [employee, setEmployee] = useState(employees.find(e => e.active)?.id || '');
+      const [callData, setCallData] = useState({
+        answered: false,
+        interested: false,
+        notInterested: false,
+        leftVoicemail: false,
+        sentEmail: false,
+        wantsPricing: false,
+        wantsCatalog: false,
+        needsFollowUp: false,
+        notes: ''
+      });
+      const [saving, setSaving] = useState(false);
+      const [filter, setFilter] = useState('all'); // 'all', 'prospects', 'customers'
+
+      // Filter companies based on selected filter
+      const filteredCompanies = companies.filter(c => {
+        if (filter === 'prospects') return !c.is_customer;
+        if (filter === 'customers') return c.is_customer;
+        return true;
+      });
+
+      const currentCompany = filteredCompanies[currentIndex];
+
+      const resetForm = () => {
+        setCallData({
+          answered: false,
+          interested: false,
+          notInterested: false,
+          leftVoicemail: false,
+          sentEmail: false,
+          wantsPricing: false,
+          wantsCatalog: false,
+          needsFollowUp: false,
+          notes: ''
+        });
+      };
+
+      const handleNext = () => {
+        if (currentIndex < filteredCompanies.length - 1) {
+          setCurrentIndex(currentIndex + 1);
+          resetForm();
+        }
+      };
+
+      const handlePrevious = () => {
+        if (currentIndex > 0) {
+          setCurrentIndex(currentIndex - 1);
+          resetForm();
+        }
+      };
+
+      const handleSkip = () => {
+        handleNext();
+      };
+
+      const handleSaveAndNext = async () => {
+        if (!employee) {
+          alert('Please select an employee');
+          return;
+        }
+
+        setSaving(true);
+        try {
+          // Create activity
+          const activity = {
+            id: `activity_${Date.now()}`,
+            company_id: currentCompany.id,
+            employee_id: employee,
+            type: 'call',
+            answered: callData.answered,
+            interested: callData.interested,
+            follow_up: callData.needsFollowUp,
+            date: new Date().toISOString(),
+            notes: callData.notes
+          };
+
+          await api.createActivity(activity);
+
+          // If wants pricing or catalog, add to notes
+          let updatedNotes = currentCompany.notes || '';
+          const additions = [];
+          if (callData.leftVoicemail) additions.push('Left voicemail');
+          if (callData.sentEmail) additions.push('Sent email');
+          if (callData.wantsPricing) additions.push('WANTS PRICING');
+          if (callData.wantsCatalog) additions.push('WANTS CATALOG');
+          if (callData.notInterested) additions.push('Not interested');
+
+          if (additions.length > 0) {
+            const timestamp = new Date().toLocaleDateString();
+            updatedNotes += (updatedNotes ? '\n' : '') + `[${timestamp}] ${additions.join(', ')}`;
+            await api.updateCompany(currentCompany.id, { ...currentCompany, notes: updatedNotes });
+            await onCompanyUpdated();
+          }
+
+          await onActivityAdded();
+          resetForm();
+          handleNext();
+        } catch (err) {
+          alert('Failed to save activity');
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      if (filteredCompanies.length === 0) {
+        return (
+          <div className="text-center py-12">
+            <p className="text-xl text-gray-600 dark:text-gray-400">No companies to call</p>
+          </div>
+        );
+      }
+
+      if (!currentCompany) {
+        return (
+          <div className="text-center py-12">
+            <p className="text-xl text-gray-600 dark:text-gray-400">All done! 🎉</p>
+            <button
+              onClick={() => setCurrentIndex(0)}
+              className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Start Over
+            </button>
+          </div>
+        );
+      }
+
+      return (
+        <div className="max-w-4xl mx-auto space-y-6">
+          {/* Header */}
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold">📞 Call Queue</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFilter('all')}
+                className={`px-4 py-2 rounded-lg text-sm ${
+                  filter === 'all' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                }`}
+              >
+                All ({companies.length})
+              </button>
+              <button
+                onClick={() => { setFilter('prospects'); setCurrentIndex(0); resetForm(); }}
+                className={`px-4 py-2 rounded-lg text-sm ${
+                  filter === 'prospects' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                }`}
+              >
+                Prospects ({companies.filter(c => !c.is_customer).length})
+              </button>
+              <button
+                onClick={() => { setFilter('customers'); setCurrentIndex(0); resetForm(); }}
+                className={`px-4 py-2 rounded-lg text-sm ${
+                  filter === 'customers' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                }`}
+              >
+                Customers ({companies.filter(c => c.is_customer).length})
+              </button>
+            </div>
+          </div>
+
+          {/* Progress */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium">Progress</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                {currentIndex + 1} / {filteredCompanies.length}
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all"
+                style={{ width: `${((currentIndex + 1) / filteredCompanies.length) * 100}%` }}
+              ></div>
+            </div>
+          </div>
+
+          {/* Company Card */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <div className="mb-6">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                      {currentCompany.name}
+                    </h3>
+                    {currentCompany.is_customer ? (
+                      <span className="px-4 py-1.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded-full text-sm font-bold shadow-sm">
+                        ✓ CUSTOMER
+                      </span>
+                    ) : (
+                      <span className="px-4 py-1.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-bold shadow-sm">
+                        🔍 PROSPECT
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-gray-600 dark:text-gray-400 text-lg">{currentCompany.type}</p>
+                  {currentCompany.contact_name && (
+                    <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg inline-block">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">👤 Contact: </span>
+                      <span className="text-sm font-bold text-blue-700 dark:text-blue-300">{currentCompany.contact_name}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {currentCompany.phone && (
+                  <div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">📞 Phone:</span>
+                    <p className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+                      {currentCompany.phone}
+                    </p>
+                  </div>
+                )}
+                {currentCompany.address && (
+                  <div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">📍 Address:</span>
+                    <p className="text-gray-900 dark:text-gray-100">{currentCompany.address}</p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      {currentCompany.city}, {currentCompany.state} {currentCompany.zip}
+                    </p>
+                  </div>
+                )}
+                {currentCompany.email && (
+                  <div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">✉️ Email:</span>
+                    <p className="text-gray-900 dark:text-gray-100">{currentCompany.email}</p>
+                  </div>
+                )}
+                {currentCompany.website && (
+                  <div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">🌐 Website:</span>
+                    <p className="text-gray-900 dark:text-gray-100">{currentCompany.website}</p>
+                  </div>
+                )}
+              </div>
+
+              {currentCompany.notes && (
+                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">📝 Notes:</span>
+                  <p className="text-gray-900 dark:text-gray-100 text-sm mt-1 whitespace-pre-wrap">
+                    {currentCompany.notes}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t dark:border-gray-700 pt-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Calling as:
+                </label>
+                <select
+                  value={employee}
+                  onChange={(e) => setEmployee(e.target.value)}
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                >
+                  {employees.filter(e => e.active).map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={callData.answered}
+                    onChange={(e) => setCallData({...callData, answered: e.target.checked})}
+                    className="mr-3 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">✓ Answered</span>
+                </label>
+
+                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={callData.interested}
+                    onChange={(e) => setCallData({...callData, interested: e.target.checked})}
+                    className="mr-3 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">⭐ Interested</span>
+                </label>
+
+                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={callData.notInterested}
+                    onChange={(e) => setCallData({...callData, notInterested: e.target.checked})}
+                    className="mr-3 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">✗ Not Interested</span>
+                </label>
+
+                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={callData.leftVoicemail}
+                    onChange={(e) => setCallData({...callData, leftVoicemail: e.target.checked})}
+                    className="mr-3 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">📞 Left Voicemail</span>
+                </label>
+
+                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={callData.sentEmail}
+                    onChange={(e) => setCallData({...callData, sentEmail: e.target.checked})}
+                    className="mr-3 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">✉️ Sent Email</span>
+                </label>
+
+                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={callData.wantsPricing}
+                    onChange={(e) => setCallData({...callData, wantsPricing: e.target.checked})}
+                    className="mr-3 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">💰 Wants Pricing</span>
+                </label>
+
+                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={callData.wantsCatalog}
+                    onChange={(e) => setCallData({...callData, wantsCatalog: e.target.checked})}
+                    className="mr-3 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">📚 Wants Catalog</span>
+                </label>
+
+                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={callData.needsFollowUp}
+                    onChange={(e) => setCallData({...callData, needsFollowUp: e.target.checked})}
+                    className="mr-3 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">🔔 Needs Follow-up</span>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Call Notes:
+                </label>
+                <textarea
+                  value={callData.notes}
+                  onChange={(e) => setCallData({...callData, notes: e.target.value})}
+                  rows="3"
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Add notes about this call..."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={handlePrevious}
+              disabled={currentIndex === 0}
+              className="px-6 py-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ← Previous
+            </button>
+            <button
+              onClick={handleSkip}
+              className="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+            >
+              Skip →
+            </button>
+            <button
+              onClick={handleSaveAndNext}
+              disabled={saving}
+              className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-300 font-semibold"
+            >
+              {saving ? 'Saving...' : 'Save & Next →'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Dashboard Component
+    function Dashboard({ companies, activities, employees, setActiveTab }) {
+      const [stats, setStats] = useState(null);
+
+      useEffect(() => {
+        api.getStats().then(setStats);
+      }, [activities]);
+
+      if (!stats) return <div>Loading statistics...</div>;
+
+      const recentActivities = [...activities].slice(0, 5);
+
+      return (
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold">Dashboard Overview</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatCard title="Total Companies" value={stats.totalCompanies} color="blue" onClick={() => setActiveTab('companies')} />
+            <StatCard title="Contacted & Answered" value={stats.contacted} color="green" />
+            <StatCard title="Interested" value={stats.interested} color="purple" />
+            <StatCard title="Needs Follow-up" value={stats.needsFollowup} color="yellow" />
+            <StatCard title="Total Calls" value={stats.totalCalls} color="indigo" />
+            <StatCard title="Total Emails" value={stats.totalEmails} color="pink" />
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold mb-4">Recent Activities</h3>
+            {recentActivities.length === 0 ? (
+              <p className="text-gray-500 dark:text-gray-400">No activities yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {recentActivities.map((activity) => {
+                  const company = companies.find(c => c.id === activity.company_id);
+                  const employee = employees.find(e => e.id === activity.employee_id);
+                  return (
+                    <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
+                      <div className="flex-1">
+                        <p className="font-medium">{company?.name || 'Unknown'}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {activity.type === 'call' ? '📞' : '✉️'} {activity.type} by {employee?.name || 'Unknown'}
+                          {activity.answered && ' - Answered'}
+                          {activity.interested && ' - Interested'}
+                        </p>
+                      </div>
+                      <span className="text-sm text-gray-500">{new Date(activity.date).toLocaleDateString()}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function StatCard({ title, value, color, onClick }) {
+      const colors = {
+        blue: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+        green: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+        purple: 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+        yellow: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+        indigo: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+        pink: 'bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
+      };
+
+      return (
+        <div 
+          className={`${colors[color]} rounded-lg shadow p-6 ${onClick ? 'cursor-pointer hover:shadow-lg transition-shadow' : ''}`}
+          onClick={onClick}
+        >
+          <h3 className="text-sm font-medium opacity-75">{title}</h3>
+          <p className="text-3xl font-bold mt-2">{value}</p>
+        </div>
+      );
+    }
+
+    // Companies Component
+    function Companies({ companies, activities, employees, onRefresh, onActivityAdded }) {
+      const [search, setSearch] = useState('');
+      const [typeFilter, setTypeFilter] = useState('all');
+      const [selectedCompany, setSelectedCompany] = useState(null);
+      const [showActivityModal, setShowActivityModal] = useState(false);
+      const [showEditModal, setShowEditModal] = useState(false);
+      const [showDetailModal, setShowDetailModal] = useState(false);
+      const [editingCompany, setEditingCompany] = useState(null);
+      const [viewingCompany, setViewingCompany] = useState(null);
+
+      const filtered = companies.filter(company => {
+        const matchesSearch = company.name.toLowerCase().includes(search.toLowerCase()) ||
+                            (company.city || '').toLowerCase().includes(search.toLowerCase());
+        const matchesType = typeFilter === 'all' || company.type === typeFilter;
+        return matchesSearch && matchesType;
+      });
+
+      const types = [...new Set(companies.map(c => c.type))].filter(Boolean);
+
+      const handleActivitySaved = async () => {
+        setShowActivityModal(false);
+        setSelectedCompany(null);
+        await onActivityAdded();
+      };
+
+      const handleEditCompany = (company) => {
+        setEditingCompany(company);
+        setShowEditModal(true);
+      };
+
+      const handleCreateCompany = () => {
+        setEditingCompany(null);
+        setShowEditModal(true);
+      };
+
+      const handleCompanySaved = async () => {
+        setShowEditModal(false);
+        setShowDetailModal(false);
+        setEditingCompany(null);
+        setViewingCompany(null);
+        await onRefresh();
+      };
+
+      const handleViewCompany = (company) => {
+        setViewingCompany(company);
+        setShowDetailModal(true);
+      };
+
+      const calculateDaysSince = (dateString) => {
+        if (!dateString) return null;
+        const date = new Date(dateString);
+        const now = new Date();
+        const days = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+        return days;
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold">Companies ({filtered.length})</h2>
+            <button
+              onClick={handleCreateCompany}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              + Add Company
+            </button>
+          </div>
+
+          <div className="flex gap-4">
+            <input
+              type="text"
+              placeholder="Search companies..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            />
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="px-4 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            >
+              <option value="all">All Types</option>
+              {types.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Company</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Location</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Contact</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Customer</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {filtered.map((company) => {
+                  const companyActivities = activities.filter(a => a.company_id === company.id);
+                  const interested = companyActivities.some(a => a.interested);
+                  const needsFollowup = companyActivities.some(a => a.follow_up);
+                  const daysSinceOrder = calculateDaysSince(company.last_order_date);
+                  const daysSinceEstimate = calculateDaysSince(company.last_estimate_date);
+
+                  return (
+                    <tr key={company.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => handleViewCompany(company)}
+                          className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline text-left"
+                        >
+                          {company.name}
+                        </button>
+                        {company.website && <div className="text-sm text-gray-500 dark:text-gray-400">{company.website}</div>}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
+                          {company.type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm">{company.city}, {company.state}</td>
+                      <td className="px-6 py-4 text-sm">
+                        {company.contact_name ? (
+                          <div className="font-medium text-gray-900 dark:text-gray-100">👤 {company.contact_name}</div>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500 italic">-</span>
+                        )}
+                        {company.phone && <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">📞 {company.phone}</div>}
+                      </td>
+                      <td className="px-6 py-4">
+                        {company.is_customer ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="px-2 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-center">Customer</span>
+                            {daysSinceOrder !== null && (
+                              <span className="text-xs text-gray-600 dark:text-gray-400">Order: {daysSinceOrder}d ago</span>
+                            )}
+                            {daysSinceEstimate !== null && !company.last_order_date && (
+                              <span className="text-xs text-gray-600 dark:text-gray-400">Est: {daysSinceEstimate}d ago</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 rounded">Prospect</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          {interested && <span className="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-center">Interested</span>}
+                          {needsFollowup && <span className="px-2 py-1 text-xs font-medium bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded text-center">Follow-up</span>}
+                          {companyActivities.length === 0 && <span className="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 rounded text-center">Not Contacted</span>}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEditCompany(company)}
+                            className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 font-medium text-sm"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedCompany(company);
+                              setShowActivityModal(true);
+                            }}
+                            className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300 font-medium text-sm"
+                          >
+                            Log Activity
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {showActivityModal && selectedCompany && (
+            <ActivityModal
+              company={selectedCompany}
+              employees={employees}
+              onClose={() => {
+                setShowActivityModal(false);
+                setSelectedCompany(null);
+              }}
+              onSave={handleActivitySaved}
+            />
+          )}
+          
+          {showEditModal && (
+            <CompanyEditModal
+              company={editingCompany}
+              onClose={() => {
+                setShowEditModal(false);
+                setEditingCompany(null);
+              }}
+              onSave={handleCompanySaved}
+            />
+          )}
+          
+          {showDetailModal && viewingCompany && (
+            <CompanyDetailModal
+              company={viewingCompany}
+              activities={activities.filter(a => a.company_id === viewingCompany.id)}
+              employees={employees}
+              onClose={() => {
+                setShowDetailModal(false);
+                setViewingCompany(null);
+              }}
+              onEdit={() => {
+                setEditingCompany(viewingCompany);
+                setShowEditModal(true);
+              }}
+              onLogActivity={() => {
+                setSelectedCompany(viewingCompany);
+                setShowActivityModal(true);
+              }}
+              onSave={handleCompanySaved}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // Activities Component
+    function Activities({ activities, companies, employees, onRefresh }) {
+      const [filter, setFilter] = useState('all');
+
+      const filtered = activities.filter(activity => {
+        if (filter === 'all') return true;
+        if (filter === 'calls') return activity.type === 'call';
+        if (filter === 'emails') return activity.type === 'email';
+        if (filter === 'interested') return activity.interested;
+        if (filter === 'followup') return activity.follow_up;
+        return true;
+      });
+
+      const deleteActivity = async (id) => {
+        if (confirm('Delete this activity?')) {
+          try {
+            await api.deleteActivity(id);
+            await onRefresh();
+          } catch (err) {
+            alert('Failed to delete activity');
+          }
+        }
+      };
+
+      return (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-bold">Activity Log ({filtered.length})</h2>
+
+          <div className="flex gap-2">
+            {[
+              { value: 'all', label: 'All' },
+              { value: 'calls', label: 'Calls' },
+              { value: 'emails', label: 'Emails' },
+              { value: 'interested', label: 'Interested' },
+              { value: 'followup', label: 'Follow-up' }
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setFilter(value)}
+                className={`px-4 py-2 rounded-lg font-medium ${
+                  filter === value ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
+            {filtered.length === 0 ? (
+              <div className="p-8 text-center text-gray-500 dark:text-gray-400">No activities found</div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Result</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filtered.map((activity) => {
+                    const company = companies.find(c => c.id === activity.company_id);
+                    const employee = employees.find(e => e.id === activity.employee_id);
+                    
+                    return (
+                      <tr key={activity.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-6 py-4 text-sm">{new Date(activity.date).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 font-medium">{company?.name || 'Unknown'}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 text-xs font-medium rounded ${
+                            activity.type === 'call' ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' : 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200'
+                          }`}>
+                            {activity.type === 'call' ? '📞 Call' : '✉️ Email'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm">{employee?.name || 'Unknown'}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-1">
+                            {activity.answered && <span className="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-center">Answered</span>}
+                            {activity.interested && <span className="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-center">Interested</span>}
+                            {activity.follow_up && <span className="px-2 py-1 text-xs font-medium bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded text-center">Follow-up</span>}
+                            {!activity.answered && <span className="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 rounded text-center">No Answer</span>}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm max-w-xs truncate">{activity.notes || '-'}</td>
+                        <td className="px-6 py-4">
+                          <button onClick={() => deleteActivity(activity.id)} className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 text-sm">
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Employees Component
+    function Employees({ employees, onRefresh }) {
+      const [showModal, setShowModal] = useState(false);
+      const [editingEmployee, setEditingEmployee] = useState(null);
+
+      const handleEdit = (employee) => {
+        setEditingEmployee(employee);
+        setShowModal(true);
+      };
+
+      const handleCreate = () => {
+        setEditingEmployee(null);
+        setShowModal(true);
+      };
+
+      const handleSaved = async () => {
+        setShowModal(false);
+        setEditingEmployee(null);
+        await onRefresh();
+      };
+
+      const toggleActive = async (employee) => {
+        try {
+          await api.updateEmployee(employee.id, { ...employee, active: !employee.active });
+          await onRefresh();
+        } catch (err) {
+          alert('Failed to update employee');
+        }
+      };
+
+      const deleteEmployee = async (id) => {
+        if (confirm('Delete this employee?')) {
+          try {
+            await api.deleteEmployee(id);
+            await onRefresh();
+          } catch (err) {
+            alert('Failed to delete employee');
+          }
+        }
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold">Team Members ({employees.length})</h2>
+            <button
+              onClick={handleCreate}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              + Add Employee
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {employees.map((employee) => (
+              <div key={employee.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-semibold text-lg">{employee.name}</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{employee.role}</p>
+                  </div>
+                  <span className={`px-2 py-1 text-xs font-medium rounded ${
+                    employee.active ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+                  }`}>
+                    {employee.active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEdit(employee)}
+                    className="flex-1 px-3 py-2 text-sm border dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => toggleActive(employee)}
+                    className="flex-1 px-3 py-2 text-sm border dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    {employee.active ? 'Deactivate' : 'Activate'}
+                  </button>
+                  <button
+                    onClick={() => deleteEmployee(employee.id)}
+                    className="px-3 py-2 text-sm text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800 rounded hover:bg-red-50 dark:hover:bg-red-900/30"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {showModal && (
+            <EmployeeEditModal
+              employee={editingEmployee}
+              onClose={() => {
+                setShowModal(false);
+                setEditingEmployee(null);
+              }}
+              onSave={handleSaved}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // Activity Modal
+    function ActivityModal({ company, employees, onClose, onSave }) {
+      const [activity, setActivity] = useState({
+        type: 'call',
+        employee_id: employees.find(e => e.active)?.id || '',
+        answered: false,
+        interested: false,
+        follow_up: false,
+        notes: ''
+      });
+      const [saving, setSaving] = useState(false);
+
+      const handleSave = async () => {
+        if (!activity.employee_id) {
+          alert('Please select an employee');
+          return;
+        }
+        
+        setSaving(true);
+        try {
+          const newActivity = {
+            id: `activity_${Date.now()}`,
+            company_id: company.id,
+            ...activity,
+            date: new Date().toISOString()
+          };
+          
+          await api.createActivity(newActivity);
+          await onSave();
+        } catch (err) {
+          alert('Failed to save activity');
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Log Activity - {company.name}</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Type</label>
+                <select
+                  value={activity.type}
+                  onChange={(e) => setActivity({...activity, type: e.target.value})}
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="call">Phone Call</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Employee</label>
+                <select
+                  value={activity.employee_id}
+                  onChange={(e) => setActivity({...activity, employee_id: e.target.value})}
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                >
+                  {employees.filter(e => e.active).map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={activity.answered}
+                    onChange={(e) => setActivity({...activity, answered: e.target.checked})}
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">They answered/responded</span>
+                </label>
+                
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={activity.interested}
+                    onChange={(e) => setActivity({...activity, interested: e.target.checked})}
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">They are interested</span>
+                </label>
+                
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={activity.follow_up}
+                    onChange={(e) => setActivity({...activity, follow_up: e.target.checked})}
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Needs follow-up</span>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Notes</label>
+                <textarea
+                  value={activity.notes}
+                  onChange={(e) => setActivity({...activity, notes: e.target.value})}
+                  rows="3"
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Add notes..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={onClose} className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100">
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                {saving ? 'Saving...' : 'Save Activity'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Company Edit Modal
+    function CompanyEditModal({ company, onClose, onSave }) {
+      const isEdit = !!company;
+      const [formData, setFormData] = useState(company || {
+        name: '',
+        type: 'General Contractor',
+        contact_name: '',
+        address: '',
+        city: '',
+        state: 'DE',
+        zip: '',
+        phone: '',
+        email: '',
+        website: '',
+        notes: '',
+        is_customer: false,
+        last_order_date: '',
+        last_estimate_date: ''
+      });
+      const [saving, setSaving] = useState(false);
+
+      const handleSave = async () => {
+        if (!formData.name.trim()) {
+          alert('Please enter a company name');
+          return;
+        }
+        
+        setSaving(true);
+        try {
+          if (isEdit) {
+            await api.updateCompany(company.id, formData);
+          } else {
+            const newCompany = {
+              id: `company_${Date.now()}`,
+              ...formData
+            };
+            await api.createCompany(newCompany);
+          }
+          await onSave();
+        } catch (err) {
+          console.error('Save error:', err);
+          alert(`Failed to ${isEdit ? 'update' : 'create'} company: ${err.message}`);
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 my-8">
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">{isEdit ? 'Edit Company' : 'Add New Company'}</h3>
+            
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Company Name *</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Type</label>
+                  <input
+                    type="text"
+                    value={formData.type}
+                    onChange={(e) => setFormData({...formData, type: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Contact Name</label>
+                  <input
+                    type="text"
+                    value={formData.contact_name || ''}
+                    onChange={(e) => setFormData({...formData, contact_name: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    placeholder="Main contact person"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Phone</label>
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Address</label>
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">City</label>
+                  <input
+                    type="text"
+                    value={formData.city}
+                    onChange={(e) => setFormData({...formData, city: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">State</label>
+                  <input
+                    type="text"
+                    value={formData.state}
+                    onChange={(e) => setFormData({...formData, state: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">ZIP</label>
+                  <input
+                    type="text"
+                    value={formData.zip}
+                    onChange={(e) => setFormData({...formData, zip: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Email</label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Website</label>
+                  <input
+                    type="text"
+                    value={formData.website}
+                    onChange={(e) => setFormData({...formData, website: e.target.value})}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Notes</label>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                    rows="3"
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={formData.is_customer}
+                      onChange={(e) => setFormData({...formData, is_customer: e.target.checked})}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Current Customer</span>
+                  </label>
+                </div>
+
+                {formData.is_customer && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Last Order Date</label>
+                      <input
+                        type="date"
+                        value={formData.last_order_date || ''}
+                        onChange={(e) => setFormData({...formData, last_order_date: e.target.value})}
+                        className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Last Estimate Date</label>
+                      <input
+                        type="date"
+                        value={formData.last_estimate_date || ''}
+                        onChange={(e) => setFormData({...formData, last_estimate_date: e.target.value})}
+                        className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={onClose} className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100">
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                {saving ? 'Saving...' : (isEdit ? 'Update Company' : 'Add Company')}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Employee Edit Modal
+    function EmployeeEditModal({ employee, onClose, onSave }) {
+      const isEdit = !!employee;
+      const [formData, setFormData] = useState(employee || {
+        name: '',
+        role: 'Sales Rep',
+        active: true
+      });
+      const [saving, setSaving] = useState(false);
+
+      const handleSave = async () => {
+        if (!formData.name.trim()) {
+          alert('Please enter a name');
+          return;
+        }
+        
+        setSaving(true);
+        try {
+          if (isEdit) {
+            await api.updateEmployee(employee.id, formData);
+          } else {
+            const newEmployee = {
+              id: `emp_${Date.now()}`,
+              ...formData
+            };
+            await api.createEmployee(newEmployee);
+          }
+          await onSave();
+        } catch (err) {
+          alert(`Failed to ${isEdit ? 'update' : 'create'} employee`);
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">{isEdit ? 'Edit Employee' : 'Add New Employee'}</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Role</label>
+                <input
+                  type="text"
+                  value={formData.role}
+                  onChange={(e) => setFormData({...formData, role: e.target.value})}
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Sales Rep"
+                />
+              </div>
+
+              {isEdit && (
+                <div>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={formData.active}
+                      onChange={(e) => setFormData({...formData, active: e.target.checked})}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Active Employee</span>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={onClose} className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100">
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                {saving ? 'Saving...' : (isEdit ? 'Update Employee' : 'Add Employee')}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Company Detail Modal
+    function CompanyDetailModal({ company, activities, employees, onClose, onEdit, onLogActivity, onSave }) {
+      const [notes, setNotes] = useState(company.notes || '');
+      const [saving, setSaving] = useState(false);
+      const [editingNotes, setEditingNotes] = useState(false);
+
+      const calculateDaysSince = (dateString) => {
+        if (!dateString) return null;
+        const date = new Date(dateString);
+        const now = new Date();
+        return Math.floor((now - date) / (1000 * 60 * 60 * 24));
+      };
+
+      const handleSaveNotes = async () => {
+        setSaving(true);
+        try {
+          await api.updateCompany(company.id, { ...company, notes });
+          setEditingNotes(false);
+          await onSave();
+        } catch (err) {
+          alert('Failed to save notes');
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      const daysSinceOrder = calculateDaysSince(company.last_order_date);
+      const daysSinceEstimate = calculateDaysSince(company.last_estimate_date);
+
+      const companyActivities = activities.filter(a => a.company_id === company.id);
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{company.name}</h2>
+                <p className="text-gray-600 dark:text-gray-400">{company.type}</p>
+                {company.contact_name && (
+                  <p className="text-gray-700 dark:text-gray-300 mt-1">👤 Contact: <span className="font-semibold">{company.contact_name}</span></p>
+                )}
+              </div>
+              <button
+                onClick={onClose}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Contact Info and Customer Status Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              {/* Contact Information */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b dark:border-gray-700 pb-2">
+                  Contact Information
+                </h3>
+                <div className="space-y-3 text-sm">
+                  {company.address && (
+                    <div>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">📍 Address:</span>
+                      <p className="text-gray-600 dark:text-gray-400 ml-5">{company.address}</p>
+                      <p className="text-gray-600 dark:text-gray-400 ml-5">
+                        {company.city}, {company.state} {company.zip}
+                      </p>
+                    </div>
+                  )}
+                  {company.phone && (
+                    <div>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">📞 Phone:</span>
+                      <p className="text-gray-600 dark:text-gray-400 ml-5">{company.phone}</p>
+                    </div>
+                  )}
+                  {company.email && (
+                    <div>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">✉️ Email:</span>
+                      <p className="text-gray-600 dark:text-gray-400 ml-5">{company.email}</p>
+                    </div>
+                  )}
+                  {company.website && (
+                    <div>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">🌐 Website:</span>
+                      <p className="text-gray-600 dark:text-gray-400 ml-5">{company.website}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Customer Status */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b dark:border-gray-700 pb-2">
+                  Customer Status
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      company.is_customer 
+                        ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' 
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+                    }`}>
+                      {company.is_customer ? '✓ Current Customer' : '🔍 Prospect'}
+                    </span>
+                  </div>
+                  
+                  {company.is_customer && (
+                    <div className="space-y-2 text-sm">
+                      {company.last_order_date && (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                          <span className="font-medium text-gray-700 dark:text-gray-300">Last Order:</span>
+                          <p className="text-gray-600 dark:text-gray-400 mt-1">
+                            {new Date(company.last_order_date).toLocaleDateString()}
+                            {daysSinceOrder !== null && (
+                              <span className="ml-2 px-2 py-0.5 bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 rounded text-xs">
+                                {daysSinceOrder} days ago
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {company.last_estimate_date && (
+                        <div className="p-3 bg-green-50 dark:bg-green-900/30 rounded-lg">
+                          <span className="font-medium text-gray-700 dark:text-gray-300">Last Estimate:</span>
+                          <p className="text-gray-600 dark:text-gray-400 mt-1">
+                            {new Date(company.last_estimate_date).toLocaleDateString()}
+                            {daysSinceEstimate !== null && (
+                              <span className="ml-2 px-2 py-0.5 bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 rounded text-xs">
+                                {daysSinceEstimate} days ago
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Notes Section */}
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notes</h3>
+                {!editingNotes && (
+                  <button
+                    onClick={() => setEditingNotes(true)}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                  >
+                    ✏️ Edit
+                  </button>
+                )}
+              </div>
+              
+              {editingNotes ? (
+                <div>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    placeholder="Add notes about this company..."
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={handleSaveNotes}
+                      disabled={saving}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 text-sm"
+                    >
+                      {saving ? 'Saving...' : 'Save Notes'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingNotes(false);
+                        setNotes(company.notes || '');
+                      }}
+                      className="px-4 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-gray-700 dark:text-gray-300 min-h-[100px]">
+                  {company.notes || 'No notes yet. Click Edit to add notes about this company.'}
+                </div>
+              )}
+            </div>
+
+            {/* Activity History */}
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">
+                Activity History ({companyActivities.length})
+              </h3>
+              
+              {companyActivities.length === 0 ? (
+                <p className="text-gray-500 dark:text-gray-400 text-sm p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-center">
+                  No activities logged yet. Click "Log Activity" to add one.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {companyActivities.map((activity) => {
+                    const employee = employees.find(e => e.id === activity.employee_id);
+                    return (
+                      <div
+                        key={activity.id}
+                        className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                activity.type === 'call' 
+                                  ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' 
+                                  : 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200'
+                              }`}>
+                                {activity.type === 'call' ? '📞 Call' : '✉️ Email'}
+                              </span>
+                              <span className="text-gray-600 dark:text-gray-400">
+                                by {employee?.name || 'Unknown'}
+                              </span>
+                            </div>
+                            
+                            <div className="flex gap-2 mb-1 flex-wrap">
+                              {activity.answered && (
+                                <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
+                                  ✓ Answered
+                                </span>
+                              )}
+                              {activity.interested && (
+                                <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
+                                  ⭐ Interested
+                                </span>
+                              )}
+                              {activity.follow_up && (
+                                <span className="px-2 py-0.5 text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded">
+                                  🔔 Follow-up
+                                </span>
+                              )}
+                            </div>
+                            
+                            {activity.notes && (
+                              <p className="text-gray-700 dark:text-gray-300 mt-1">{activity.notes}</p>
+                            )}
+                          </div>
+                          
+                          <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap ml-2">
+                            {new Date(activity.date).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-4 border-t dark:border-gray-700">
+              <button
+                onClick={onEdit}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Edit Company
+              </button>
+              <button
+                onClick={onLogActivity}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Log Activity
+              </button>
+              <button
+                onClick={onClose}
+                className="px-6 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
