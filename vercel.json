@@ -31,6 +31,22 @@
       "dest": "/server-supabase.js"
     },
     {
+      "src": "/users(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/activity-logs(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/export/(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/settings/(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
       "src": "/employees(.*)",
       "dest": "/server-supabase.js"
     },

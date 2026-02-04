@@ -98,8 +98,8 @@
       getActivityLogs: (limit = 50) => api.request(`/activity-logs?limit=${limit}`),
 
       // Exports
-      exportCompanies: () => window.location.href = API_BASE + '/export/companies',
-      exportEmployees: () => window.location.href = API_BASE + '/export/employees',
+      exportCompanies: () => window.location.href = API_URL + '/export/companies',
+      exportEmployees: () => window.location.href = API_URL + '/export/employees',
 
       // Call Script
       getScript: () => api.request('/settings/script'),
@@ -107,12 +107,6 @@
         method: 'PUT',
         body: JSON.stringify(scriptData)
       }),
-      updateUser: (id, userData) => api.request(`/users/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(userData)
-      }),
-      deleteUser: (id) => api.request(`/users/${id}`, { method: 'DELETE' }),
-      
       // Employees
       getEmployees: () => api.request('/employees'),
       createEmployee: (employee) => api.request('/employees', {
