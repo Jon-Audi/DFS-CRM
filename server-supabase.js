@@ -433,9 +433,14 @@ app.get('/stats', authenticateToken, async (req, res) => {
 });
 
 // ============================================
-// SERVER START
+// SPA FALLBACK ROUTE
 // ============================================
+// Serve index.html for all other routes (SPA routing)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/index.html'));
+});
 
+// ============================================
 // Only start server if not in Vercel (serverless environment)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   app.listen(PORT, () => {
