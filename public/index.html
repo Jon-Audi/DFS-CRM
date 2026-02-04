@@ -411,6 +411,7 @@
     function Calling({ companies, employees, onActivityAdded, onCompanyUpdated }) {
       const [currentIndex, setCurrentIndex] = useState(0);
       const [employee, setEmployee] = useState(employees.find(e => e.active)?.id || '');
+      const [showScript, setShowScript] = useState(false);
       const [callData, setCallData] = useState({
         answered: false,
         interested: false,
@@ -544,6 +545,13 @@
             <h2 className="text-2xl font-bold">📞 Call Queue</h2>
             <div className="flex gap-2">
               <button
+                onClick={() => setShowScript(!showScript)}
+                className="px-4 py-2 rounded-lg text-sm bg-purple-600 text-white hover:bg-purple-700"
+                title="View call script and company info"
+              >
+                📋 Script
+              </button>
+              <button
                 onClick={() => setFilter('all')}
                 className={`px-4 py-2 rounded-lg text-sm ${
                   filter === 'all' 
@@ -576,7 +584,78 @@
             </div>
           </div>
 
-          {/* Progress */}
+          {/* Call Script Modal */}
+          {showScript && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-96 overflow-y-auto">
+                <div className="p-6 border-b dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 flex justify-between items-center">
+                  <h3 className="text-xl font-bold">📞 Cold Call Script - Delaware Fence Solutions</h3>
+                  <button onClick={() => setShowScript(false)} className="text-2xl font-bold text-gray-600 hover:text-gray-900 dark:text-gray-400">&times;</button>
+                </div>
+                <div className="p-6 space-y-4 text-gray-900 dark:text-gray-100">
+                  <div>
+                    <h4 className="font-bold text-lg mb-2">📍 About Us</h4>
+                    <p className="text-sm mb-3">Delaware Fence Solutions is a wholesale/retail fence company located in Wilmington, DE (near Prices Corner). We specialize in stocked materials and can order custom items from various manufacturers.</p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-lg mb-2">🎯 Opening</h4>
+                    <p className="text-sm bg-gray-100 dark:bg-gray-700 p-3 rounded italic mb-3">
+                      "Hi [Name], this is [Your Name] with Delaware Fence Solutions in Wilmington. I'm reaching out because we work with a lot of contractors in the area who are looking for quality fence materials. Do you have a quick minute?"
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-lg mb-2">📦 What We Offer</h4>
+                    <div className="text-sm space-y-2 mb-3">
+                      <p><strong>In Stock:</strong></p>
+                      <ul className="list-disc list-inside space-y-1 ml-2">
+                        <li>6' White privacy vinyl fencing</li>
+                        <li>6' Pressure Treated wood stockade</li>
+                        <li>Chainlink (various colors & heights)</li>
+                        <li>Split rail (2, 3, 4 rail) and slip board</li>
+                        <li>Aluminum fencing (48" 2-rail, 54" 3-rail)</li>
+                        <li>80lb Quickcrete & tools (shovels, post hole diggers, blades, paint, glue)</li>
+                      </ul>
+                      <p className="mt-2"><strong>Custom:</strong> All gates made to order • Can order from manufacturers (SCIW, Gallagher, etc.) • We stock Lakeland (Country Estates) and Hampton (Amtech) vinyl</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-lg mb-2">🚚 Services</h4>
+                    <p className="text-sm bg-gray-100 dark:bg-gray-700 p-3 rounded mb-3">
+                      <strong>We do NOT do installation</strong>, but we actively refer contractors like you to customers looking for fence installation work.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-lg mb-2">💬 Value Pitch</h4>
+                    <p className="text-sm bg-blue-50 dark:bg-blue-900 p-3 rounded italic mb-3">
+                      "We're a supplier to contractors in your area. We keep popular items in stock so you can get materials fast, we offer delivery, and we'll refer customers to you for installation work. Most importantly, we can help you win bids by getting you material costs quick."
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-lg mb-2">❓ Qualifying Questions</h4>
+                    <ul className="text-sm space-y-2 list-disc list-inside ml-2 mb-3">
+                      <li>Do you source your own materials or work with suppliers?</li>
+                      <li>What types of fencing projects do you typically install?</li>
+                      <li>Do you have a preferred vendor for materials?</li>
+                      <li>Would it be helpful to have quick access to material costs for bids?</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-lg mb-2">🎁 Call-to-Action</h4>
+                    <p className="text-sm bg-green-50 dark:bg-green-900 p-3 rounded italic">
+                      "How about I send you our current pricing sheet and catalog? That way you'll know what we have in stock and can reach out anytime you need materials."
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium">Progress</span>
