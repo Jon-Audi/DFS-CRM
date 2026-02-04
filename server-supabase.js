@@ -139,6 +139,104 @@ app.post('/auth/register', async (req, res) => {
 });
 
 // ============================================
+// USER MANAGEMENT ROUTES (ADMIN ONLY)
+// ============================================
+
+app.get('/users', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, username, name, role, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error('Error fetching users:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch users' });
+  }
+});
+
+app.put('/users/:id', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { username, name, password } = req.body;
+    const userId = req.params.id;
+
+    // Build update object
+    const updateData = { name };
+
+    // If username is being changed, check for duplicates
+    if (username) {
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', username)
+        .neq('id', userId)
+        .single();
+
+      if (existingUser) {
+        return res.status(400).json({ error: 'Username already exists' });
+      }
+
+      updateData.username = username;
+    }
+
+    // If password is being changed, hash it
+    if (password) {
+      updateData.password = bcrypt.hashSync(password, 10);
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', userId);
+
+    if (error) throw error;
+    res.json({ message: 'User updated successfully' });
+  } catch (err) {
+    console.error('Error updating user:', err);
+    res.status(500).json({ error: err.message || 'Failed to update user' });
+  }
+});
+
+app.delete('/users/:id', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const userId = req.params.id;
+
+    // Don't allow deleting the admin user (id=1)
+    if (userId === '1') {
+      return res.status(400).json({ error: 'Cannot delete admin user' });
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', userId);
+
+    if (error) throw error;
+    res.json({ message: 'User deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting user:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete user' });
+  }
+});
+
+// ============================================
 // COMPANY ROUTES
 // ============================================
 
