@@ -2,17 +2,50 @@
   "version": 2,
   "builds": [
     {
+      "src": "public/**",
+      "use": "@vercel/static"
+    },
+    {
       "src": "server-supabase.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     }
   ],
   "routes": [
     {
+      "src": "/public/(.*)",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/auth/(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/companies(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/employees(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/activities(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/stats(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
       "src": "/(.*)",
-      "dest": "server-supabase.js"
+      "dest": "/public/index.html"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
+
