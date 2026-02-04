@@ -145,6 +145,7 @@ app.post('/auth/register', async (req, res) => {
 app.get('/users', authenticateToken, async (req, res) => {
   try {
     // Check if user is admin
+    console.log('User requesting /users:', req.user);
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
@@ -236,6 +237,212 @@ app.delete('/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Activity Logs - Get recent activity
+app.get('/activity-logs', authenticateToken, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    
+    const { data, error } = await supabase
+      .from('activity_logs')
+      .select(`
+        id,
+        action_type,
+        entity_type,
+        entity_id,
+        details,
+        created_at,
+        users (username, name)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error('Error fetching activity logs:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch activity logs' });
+  }
+});
+
+// Helper function to log activity
+async function logActivity(userId, actionType, entityType, entityId, details) {
+  try {
+    await supabase
+      .from('activity_logs')
+      .insert({
+        user_id: userId,
+        action_type: actionType,
+        entity_type: entityType,
+        entity_id: entityId,
+        details: details
+      });
+  } catch (err) {
+    console.error('Error logging activity:', err);
+  }
+}
+
+// Export Companies as CSV
+app.get('/export/companies', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { data, error } = await supabase
+      .from('companies')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+
+    // Generate CSV
+    const headers = ['ID', 'Name', 'Contact Name', 'Phone', 'Email', 'Address', 'City', 'State', 'Zip', 'Type', 'Status', 'Is Customer', 'Notes', 'Created At'];
+    const csvRows = [headers.join(',')];
+
+    data.forEach(company => {
+      const row = [
+        company.id,
+        `"${(company.name || '').replace(/"/g, '""')}"`,
+        `"${(company.contact_name || '').replace(/"/g, '""')}"`,
+        `"${(company.phone || '').replace(/"/g, '""')}"`,
+        `"${(company.email || '').replace(/"/g, '""')}"`,
+        `"${(company.address || '').replace(/"/g, '""')}"`,
+        `"${(company.city || '').replace(/"/g, '""')}"`,
+        `"${(company.state || '').replace(/"/g, '""')}"`,
+        `"${(company.zip || '').replace(/"/g, '""')}"`,
+        `"${(company.type || '').replace(/"/g, '""')}"`,
+        `"${(company.status || '').replace(/"/g, '""')}"`,
+        company.is_customer ? 'Yes' : 'No',
+        `"${(company.notes || '').replace(/"/g, '""')}"`,
+        company.created_at
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csv = csvRows.join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="companies-${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+
+    await logActivity(req.user.id, 'EXPORT', 'companies', null, 'Exported companies to CSV');
+  } catch (err) {
+    console.error('Error exporting companies:', err);
+    res.status(500).json({ error: err.message || 'Failed to export companies' });
+  }
+});
+
+// Export Employees as CSV
+app.get('/export/employees', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { data, error } = await supabase
+      .from('employees')
+      .select('*, users (username)')
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+
+    // Generate CSV
+    const headers = ['ID', 'Name', 'Email', 'Phone', 'Position', 'Username', 'Created At'];
+    const csvRows = [headers.join(',')];
+
+    data.forEach(employee => {
+      const row = [
+        employee.id,
+        `"${(employee.name || '').replace(/"/g, '""')}"`,
+        `"${(employee.email || '').replace(/"/g, '""')}"`,
+        `"${(employee.phone || '').replace(/"/g, '""')}"`,
+        `"${(employee.position || '').replace(/"/g, '""')}"`,
+        `"${(employee.users?.username || '').replace(/"/g, '""')}"`,
+        employee.created_at
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csv = csvRows.join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="employees-${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+
+    await logActivity(req.user.id, 'EXPORT', 'employees', null, 'Exported employees to CSV');
+  } catch (err) {
+    console.error('Error exporting employees:', err);
+    res.status(500).json({ error: err.message || 'Failed to export employees' });
+  }
+});
+
+// Get Call Script
+app.get('/settings/script', authenticateToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'call_script')
+      .single();
+
+    if (error) {
+      // Return default script if not found
+      return res.json({
+        company: "Delaware Fence Solutions",
+        introduction: "Hi, this is [Your Name] from Delaware Fence Solutions. We're a local fence company specializing in high-quality installations for contractors and property managers.",
+        opening: "I'm reaching out because we work with contractors like [Company Name] to provide reliable fencing solutions for your projects.",
+        products: [
+          { name: "Vinyl Fencing", description: "Low maintenance, 20+ year warranty" },
+          { name: "Wood Fencing", description: "Cedar and pine options, custom designs" },
+          { name: "Chain Link", description: "Commercial grade, galvanized" },
+          { name: "Aluminum", description: "Decorative and pool code compliant" },
+          { name: "Tools & Materials", description: "Gates, posts, hardware, repair kits" }
+        ],
+        value_prop: "We offer competitive contractor pricing, quick turnaround times, and we handle everything from permits to installation.",
+        questions: [
+          "Do you currently work with any fence suppliers?",
+          "What types of fencing projects do you typically handle?",
+          "Would you be interested in learning about our contractor discount program?"
+        ],
+        cta: "I'd love to schedule a brief meeting to show you our product catalog and discuss how we can support your upcoming projects. Would next week work for you?"
+      });
+    }
+
+    res.json(JSON.parse(data.value));
+  } catch (err) {
+    console.error('Error fetching script:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch script' });
+  }
+});
+
+// Update Call Script (Admin only)
+app.put('/settings/script', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const scriptData = req.body;
+
+    const { error } = await supabase
+      .from('settings')
+      .upsert({
+        key: 'call_script',
+        value: JSON.stringify(scriptData),
+        updated_by: req.user.id,
+        updated_at: new Date().toISOString()
+      });
+
+    if (error) throw error;
+
+    await logActivity(req.user.id, 'UPDATE', 'settings', null, 'Updated call script');
+    res.json({ message: 'Script updated successfully' });
+  } catch (err) {
+    console.error('Error updating script:', err);
+    res.status(500).json({ error: err.message || 'Failed to update script' });
+  }
+});
+
 // ============================================
 // COMPANY ROUTES
 // ============================================
@@ -280,6 +487,7 @@ app.post('/companies', authenticateToken, async (req, res) => {
       }]);
 
     if (error) throw error;
+    await logActivity(req.user.id, 'CREATE', 'company', id, `Created company: ${name}`);
     res.status(201).json({ message: 'Company created', id });
   } catch (err) {
     console.error('Error creating company:', err);
@@ -313,6 +521,7 @@ app.put('/companies/:id', authenticateToken, async (req, res) => {
       .eq('id', req.params.id);
 
     if (error) throw error;
+    await logActivity(req.user.id, 'UPDATE', 'company', req.params.id, `Updated company: ${name}`);
     res.json({ message: 'Company updated' });
   } catch (err) {
     console.error('Error updating company:', err);
@@ -328,6 +537,7 @@ app.delete('/companies/:id', authenticateToken, async (req, res) => {
       .eq('id', req.params.id);
 
     if (error) throw error;
+    await logActivity(req.user.id, 'DELETE', 'company', req.params.id, `Deleted company`);
     res.json({ message: 'Company deleted' });
   } catch (err) {
     console.error('Error deleting company:', err);

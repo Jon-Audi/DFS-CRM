@@ -93,6 +93,25 @@
         body: JSON.stringify(userData)
       }),
       deleteUser: (id) => api.request(`/users/${id}`, { method: 'DELETE' }),
+
+      // Activity Logs
+      getActivityLogs: (limit = 50) => api.request(`/activity-logs?limit=${limit}`),
+
+      // Exports
+      exportCompanies: () => window.location.href = API_BASE + '/export/companies',
+      exportEmployees: () => window.location.href = API_BASE + '/export/employees',
+
+      // Call Script
+      getScript: () => api.request('/settings/script'),
+      updateScript: (scriptData) => api.request('/settings/script', {
+        method: 'PUT',
+        body: JSON.stringify(scriptData)
+      }),
+      updateUser: (id, userData) => api.request(`/users/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(userData)
+      }),
+      deleteUser: (id) => api.request(`/users/${id}`, { method: 'DELETE' }),
       
       // Employees
       getEmployees: () => api.request('/employees'),
@@ -422,14 +441,21 @@
 
     // Admin Settings Component
     function AdminSettings({ onRefresh }) {
+      const [activeSection, setActiveSection] = useState('users');
       const [users, setUsers] = useState([]);
+      const [activityLogs, setActivityLogs] = useState([]);
       const [loading, setLoading] = useState(true);
       const [editingUser, setEditingUser] = useState(null);
       const [showModal, setShowModal] = useState(false);
+      const [showScriptEditor, setShowScriptEditor] = useState(false);
 
       useEffect(() => {
-        loadUsers();
-      }, []);
+        if (activeSection === 'users') {
+          loadUsers();
+        } else if (activeSection === 'activity') {
+          loadActivityLogs();
+        }
+      }, [activeSection]);
 
       const loadUsers = async () => {
         try {
@@ -437,7 +463,21 @@
           const data = await api.getUsers();
           setUsers(data);
         } catch (err) {
-          alert('Failed to load users');
+          console.error('Load users error:', err);
+          alert('Failed to load users: ' + (err.message || 'Unknown error'));
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const loadActivityLogs = async () => {
+        try {
+          setLoading(true);
+          const data = await api.getActivityLogs(100);
+          setActivityLogs(data);
+        } catch (err) {
+          console.error('Load activity logs error:', err);
+          alert('Failed to load activity logs');
         } finally {
           setLoading(false);
         }
@@ -472,63 +512,242 @@
         }
       };
 
+      const handleExport = (type) => {
+        if (type === 'companies') {
+          api.exportCompanies();
+        } else if (type === 'employees') {
+          api.exportEmployees();
+        }
+      };
+
       return (
         <div className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">⚙️ Admin Settings - User Management</h2>
+            <h2 className="text-2xl font-bold">⚙️ Admin Settings</h2>
           </div>
 
-          {loading ? (
-            <p className="text-center text-gray-600">Loading users...</p>
-          ) : (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Username</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Display Name</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Role</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <td className="px-6 py-4 text-sm">{user.username}</td>
-                      <td className="px-6 py-4 text-sm">{user.name}</td>
-                      <td className="px-6 py-4 text-sm">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          user.role === 'admin' 
-                            ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' 
-                            : 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
-                        }`}>
-                          {user.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(user.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 text-sm space-x-2">
-                        <button
-                          onClick={() => handleEdit(user)}
-                          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-                        >
-                          Edit
-                        </button>
-                        {user.id !== 1 && (
-                          <button
-                            onClick={() => handleDelete(user.id)}
-                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </td>
+          {/* Section Tabs */}
+          <div className="flex space-x-2 border-b border-gray-300 dark:border-gray-700">
+            <button
+              onClick={() => setActiveSection('users')}
+              className={`px-4 py-2 font-medium ${
+                activeSection === 'users'
+                  ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              👥 User Management
+            </button>
+            <button
+              onClick={() => setActiveSection('activity')}
+              className={`px-4 py-2 font-medium ${
+                activeSection === 'activity'
+                  ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              📋 Activity Log
+            </button>
+            <button
+              onClick={() => setActiveSection('data')}
+              className={`px-4 py-2 font-medium ${
+                activeSection === 'data'
+                  ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              💾 Data Export
+            </button>
+            <button
+              onClick={() => setActiveSection('script')}
+              className={`px-4 py-2 font-medium ${
+                activeSection === 'script'
+                  ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              📝 Call Script
+            </button>
+          </div>
+
+          {/* User Management Section */}
+          {activeSection === 'users' && (
+            loading ? (
+              <p className="text-center text-gray-600">Loading users...</p>
+            ) : (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Username</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Display Name</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Role</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Created</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {users.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-6 py-4 text-sm">{user.username}</td>
+                        <td className="px-6 py-4 text-sm">{user.name}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            user.role === 'admin' 
+                              ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' 
+                              : 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
+                          }`}>
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          {new Date(user.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 text-sm space-x-2">
+                          <button
+                            onClick={() => handleEdit(user)}
+                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                          >
+                            Edit
+                          </button>
+                          {user.id !== 1 && (
+                            <button
+                              onClick={() => handleDelete(user.id)}
+                              className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Activity Log Section */}
+          {activeSection === 'activity' && (
+            loading ? (
+              <p className="text-center text-gray-600">Loading activity logs...</p>
+            ) : (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Showing last 100 activities
+                  </p>
+                </div>
+                <table className="w-full">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Date/Time</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">User</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Action</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Entity</th>
+                      <th className="px-6 py-3 text-left text-sm font-medium">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {activityLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          {new Date(log.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          {log.users?.name || log.users?.username || 'System'}
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            log.action_type === 'CREATE' ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' :
+                            log.action_type === 'UPDATE' ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' :
+                            log.action_type === 'DELETE' ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' :
+                            'bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200'
+                          }`}>
+                            {log.action_type}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm capitalize">{log.entity_type}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                          {log.details}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
+
+          {/* Data Export Section */}
+          {activeSection === 'data' && (
+            <div className="space-y-4">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold mb-4">Export Data to CSV</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                  Download your data as CSV files for backup or analysis.
+                </p>
+                
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-6">
+                    <div className="flex items-center mb-3">
+                      <span className="text-3xl mr-3">🏢</span>
+                      <div>
+                        <h4 className="font-semibold">Companies</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          All company records with contact info
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleExport('companies')}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    >
+                      Download Companies CSV
+                    </button>
+                  </div>
+
+                  <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-6">
+                    <div className="flex items-center mb-3">
+                      <span className="text-3xl mr-3">👥</span>
+                      <div>
+                        <h4 className="font-semibold">Employees</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          All employee records with usernames
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleExport('employees')}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    >
+                      Download Employees CSV
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Call Script Editor Section */}
+          {activeSection === 'script' && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Call Script Editor</h3>
+                <button
+                  onClick={() => setShowScriptEditor(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  ✏️ Edit Script
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Update the call script that employees see in the Calling tab. Changes are applied immediately for all users.
+              </p>
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-4">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  💡 <strong>Tip:</strong> Keep the script clear and concise. Include product details, qualifying questions, and a clear call-to-action.
+                </p>
+              </div>
             </div>
           )}
 
@@ -540,6 +759,12 @@
                 setEditingUser(null);
               }}
               onSave={handleSave}
+            />
+          )}
+
+          {showScriptEditor && (
+            <ScriptEditor 
+              onClose={() => setShowScriptEditor(false)}
             />
           )}
         </div>
@@ -633,11 +858,168 @@
       );
     }
 
+    // Script Editor Modal
+    function ScriptEditor({ onClose }) {
+      const [script, setScript] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [saving, setSaving] = useState(false);
+
+      useEffect(() => {
+        loadScript();
+      }, []);
+
+      const loadScript = async () => {
+        try {
+          const data = await api.getScript();
+          setScript(data);
+        } catch (err) {
+          alert('Failed to load script');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleSave = async () => {
+        setSaving(true);
+        try {
+          await api.updateScript(script);
+          alert('Script updated successfully!');
+          onClose();
+        } catch (err) {
+          alert('Failed to update script');
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      if (loading) {
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6">
+              <p>Loading script...</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 my-8">
+            <h3 className="text-xl font-bold mb-4">Edit Call Script</h3>
+            
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">Company Name</label>
+                <input
+                  type="text"
+                  value={script.company}
+                  onChange={(e) => setScript({ ...script, company: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Introduction</label>
+                <textarea
+                  value={script.introduction}
+                  onChange={(e) => setScript({ ...script, introduction: e.target.value })}
+                  rows="3"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Opening Line</label>
+                <textarea
+                  value={script.opening}
+                  onChange={(e) => setScript({ ...script, opening: e.target.value })}
+                  rows="2"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Value Proposition</label>
+                <textarea
+                  value={script.value_prop}
+                  onChange={(e) => setScript({ ...script, value_prop: e.target.value })}
+                  rows="2"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Call-to-Action</label>
+                <textarea
+                  value={script.cta}
+                  onChange={(e) => setScript({ ...script, cta: e.target.value })}
+                  rows="2"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Products (JSON Array)</label>
+                <textarea
+                  value={JSON.stringify(script.products, null, 2)}
+                  onChange={(e) => {
+                    try {
+                      setScript({ ...script, products: JSON.parse(e.target.value) });
+                    } catch (err) {
+                      // Invalid JSON, don't update
+                    }
+                  }}
+                  rows="6"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-mono text-sm"
+                  placeholder='[{"name": "Product", "description": "Description"}]'
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Qualifying Questions (JSON Array)</label>
+                <textarea
+                  value={JSON.stringify(script.questions, null, 2)}
+                  onChange={(e) => {
+                    try {
+                      setScript({ ...script, questions: JSON.parse(e.target.value) });
+                    } catch (err) {
+                      // Invalid JSON, don't update
+                    }
+                  }}
+                  rows="4"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-mono text-sm"
+                  placeholder='["Question 1", "Question 2"]'
+                />
+              </div>
+            </div>
+
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                {saving ? 'Saving...' : 'Save Script'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Calling Component
     function Calling({ companies, employees, onActivityAdded, onCompanyUpdated }) {
       const [currentIndex, setCurrentIndex] = useState(0);
       const [employee, setEmployee] = useState(employees.find(e => e.active)?.id || '');
       const [showScript, setShowScript] = useState(false);
+      const [script, setScript] = useState(null);
+      const [loadingScript, setLoadingScript] = useState(false);
       const [callData, setCallData] = useState({
         answered: false,
         interested: false,
@@ -651,6 +1033,25 @@
       });
       const [saving, setSaving] = useState(false);
       const [filter, setFilter] = useState('all'); // 'all', 'prospects', 'customers'
+
+      // Load script when modal opens
+      useEffect(() => {
+        if (showScript && !script) {
+          loadScript();
+        }
+      }, [showScript]);
+
+      const loadScript = async () => {
+        try {
+          setLoadingScript(true);
+          const data = await api.getScript();
+          setScript(data);
+        } catch (err) {
+          console.error('Failed to load script:', err);
+        } finally {
+          setLoadingScript(false);
+        }
+      };
 
       // Filter companies based on selected filter
       const filteredCompanies = companies.filter(c => {
@@ -815,68 +1216,68 @@
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto">
                 <div className="p-8 border-b dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 flex justify-between items-center">
-                  <h3 className="text-2xl font-bold">📞 Cold Call Script - Delaware Fence Solutions</h3>
+                  <h3 className="text-2xl font-bold">📞 Cold Call Script - {script?.company || 'Loading...'}</h3>
                   <button onClick={() => setShowScript(false)} className="text-3xl font-bold text-gray-600 hover:text-gray-900 dark:text-gray-400">&times;</button>
                 </div>
                 <div className="p-8 space-y-6 text-gray-900 dark:text-gray-100">
-                  <div>
-                    <h4 className="font-bold text-2xl mb-3">📍 About Us</h4>
-                    <p className="text-base mb-3 leading-relaxed">Delaware Fence Solutions is a wholesale/retail fence company located in Wilmington, DE (near Prices Corner). We specialize in stocked materials and can order custom items from various manufacturers.</p>
-                  </div>
+                  {loadingScript ? (
+                    <p className="text-center">Loading script...</p>
+                  ) : script ? (
+                    <>
+                      <div>
+                        <h4 className="font-bold text-2xl mb-3">📍 Introduction</h4>
+                        <p className="text-base mb-3 leading-relaxed">{script.introduction}</p>
+                      </div>
 
-                  <div>
-                    <h4 className="font-bold text-2xl mb-3">🎯 Opening</h4>
-                    <p className="text-base bg-gray-100 dark:bg-gray-700 p-4 rounded italic mb-3 leading-relaxed">
-                      "Hi [Name], this is [Your Name] with Delaware Fence Solutions in Wilmington. I'm reaching out because we work with a lot of contractors in the area who are looking for quality fence materials. Do you have a quick minute?"
-                    </p>
-                  </div>
+                      <div>
+                        <h4 className="font-bold text-2xl mb-3">🎯 Opening</h4>
+                        <p className="text-base bg-gray-100 dark:bg-gray-700 p-4 rounded italic mb-3 leading-relaxed">
+                          {script.opening}
+                        </p>
+                      </div>
 
-                  <div>
-                    <h4 className="font-bold text-2xl mb-3">📦 What We Offer</h4>
-                    <div className="text-base space-y-3 mb-3">
-                      <p><strong className="text-lg">In Stock:</strong></p>
-                      <ul className="list-disc list-inside space-y-2 ml-4">
-                        <li>6' White privacy vinyl fencing</li>
-                        <li>6' Pressure Treated wood stockade</li>
-                        <li>Chainlink (various colors & heights)</li>
-                        <li>Split rail (2, 3, 4 rail) and slip board</li>
-                        <li>Aluminum fencing (48" 2-rail, 54" 3-rail)</li>
-                        <li>80lb Quickcrete & tools (shovels, post hole diggers, blades, paint, glue)</li>
-                      </ul>
-                      <p className="mt-4"><strong className="text-lg">Custom:</strong> All gates made to order • Can order from manufacturers (SCIW, Gallagher, etc.) • We stock Lakeland (Country Estates) and Hampton (Amtech) vinyl</p>
-                    </div>
-                  </div>
+                      {script.products && script.products.length > 0 && (
+                        <div>
+                          <h4 className="font-bold text-2xl mb-3">📦 Products & Services</h4>
+                          <div className="text-base space-y-2 mb-3">
+                            {script.products.map((product, idx) => (
+                              <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2">
+                                <strong className="text-lg">{product.name}</strong>
+                                <p className="text-gray-600 dark:text-gray-400">{product.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
-                  <div>
-                    <h4 className="font-bold text-2xl mb-3">🚚 Services</h4>
-                    <p className="text-base bg-gray-100 dark:bg-gray-700 p-4 rounded mb-3 leading-relaxed">
-                      <strong>We do NOT do installation</strong>, but we actively refer contractors like you to customers looking for fence installation work.
-                    </p>
-                  </div>
+                      <div>
+                        <h4 className="font-bold text-2xl mb-3">💬 Value Proposition</h4>
+                        <p className="text-base bg-blue-50 dark:bg-blue-900 p-4 rounded italic mb-3 leading-relaxed">
+                          {script.value_prop}
+                        </p>
+                      </div>
 
-                  <div>
-                    <h4 className="font-bold text-2xl mb-3">💬 Value Pitch</h4>
-                    <p className="text-base bg-blue-50 dark:bg-blue-900 p-4 rounded italic mb-3 leading-relaxed">
-                      "We're a supplier to contractors in your area. We keep popular items in stock so you can get materials fast, we offer delivery, and we'll refer customers to you for installation work. Most importantly, we can help you win bids by getting you material costs quick."
-                    </p>
-                  </div>
+                      {script.questions && script.questions.length > 0 && (
+                        <div>
+                          <h4 className="font-bold text-2xl mb-3">❓ Qualifying Questions</h4>
+                          <ul className="text-base space-y-2 list-disc list-inside ml-4 mb-3">
+                            {script.questions.map((question, idx) => (
+                              <li key={idx}>{question}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
-                  <div>
-                    <h4 className="font-bold text-2xl mb-3">❓ Qualifying Questions</h4>
-                    <ul className="text-base space-y-2 list-disc list-inside ml-4 mb-3">
-                      <li>Do you source your own materials or work with suppliers?</li>
-                      <li>What types of fencing projects do you typically install?</li>
-                      <li>Do you have a preferred vendor for materials?</li>
-                      <li>Would it be helpful to have quick access to material costs for bids?</li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <h4 className="font-bold text-2xl mb-3">🎁 Call-to-Action</h4>
-                    <p className="text-base bg-green-50 dark:bg-green-900 p-4 rounded italic leading-relaxed">
-                      "How about I send you our current pricing sheet and catalog? That way you'll know what we have in stock and can reach out anytime you need materials."
-                    </p>
-                  </div>
+                      <div>
+                        <h4 className="font-bold text-2xl mb-3">🎁 Call-to-Action</h4>
+                        <p className="text-base bg-green-50 dark:bg-green-900 p-4 rounded italic leading-relaxed">
+                          {script.cta}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-center text-red-600">Failed to load script</p>
+                  )}
                 </div>
               </div>
             </div>
