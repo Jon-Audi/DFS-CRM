@@ -436,13 +436,19 @@ app.get('/stats', authenticateToken, async (req, res) => {
 // SERVER START
 // ============================================
 
-app.listen(PORT, () => {
-  console.log(`✓ Server running on port ${PORT}`);
-  console.log(`✓ Environment: ${process.env.NODE_ENV || 'production'}`);
-  console.log(`✓ Access at: http://localhost:${PORT}`);
-});
+// Only start server if not in Vercel (serverless environment)
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`✓ Server running on port ${PORT}`);
+    console.log(`✓ Environment: ${process.env.NODE_ENV || 'production'}`);
+    console.log(`✓ Access at: http://localhost:${PORT}`);
+  });
 
-process.on('SIGINT', () => {
-  console.log('\nServer shutdown gracefully');
-  process.exit(0);
-});
+  process.on('SIGINT', () => {
+    console.log('\nServer shutdown gracefully');
+    process.exit(0);
+  });
+}
+
+// Export for Vercel serverless
+module.exports = app;
