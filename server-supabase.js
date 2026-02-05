@@ -1193,14 +1193,13 @@ app.post('/email/send', authenticateToken, async (req, res) => {
   }
 });
 
-// Get email templates
-app.get('/email/templates', authenticateToken, async (req, res) => {
-  const templates = [
-    {
-      id: 'intro',
-      name: 'Introduction Email',
-      subject: 'Introduction - Delaware Fence Solutions',
-      body: `<p>Hello {{contact_name}},</p>
+// Default email templates (seeded on first use)
+const DEFAULT_EMAIL_TEMPLATES = [
+  {
+    id: 'intro',
+    name: 'Introduction Email',
+    subject: 'Introduction - Delaware Fence Solutions',
+    body: `<p>Hello {{contact_name}},</p>
 
 <p>My name is {{sender_name}}, and I'm reaching out from <strong>Delaware Fence Solutions</strong>, a locally, family-owned Wholesale/Retail Fence Supplier based in Wilmington, Delaware. We specialize exclusively in supplying high-quality fencing materials to contractors, builders, and property managers.</p>
 
@@ -1234,12 +1233,12 @@ app.get('/email/templates', authenticateToken, async (req, res) => {
 302-610-8901<br/>
 Info@dfs-send.com<br/>
 www.delawarefencesolutions.com</span></p>`
-    },
-    {
-      id: 'follow_up',
-      name: 'Follow-Up Email',
-      subject: 'Following Up - Delaware Fence Solutions',
-      body: `<p>Hello {{contact_name}},</p>
+  },
+  {
+    id: 'follow_up',
+    name: 'Follow-Up Email',
+    subject: 'Following Up - Delaware Fence Solutions',
+    body: `<p>Hello {{contact_name}},</p>
 
 <p>I wanted to follow up on my previous message. I hope you had a chance to review the information about Delaware Fence Solutions.</p>
 
@@ -1256,12 +1255,12 @@ www.delawarefencesolutions.com</span></p>`
 302-610-8901<br/>
 Info@dfs-send.com<br/>
 www.delawarefencesolutions.com</span></p>`
-    },
-    {
-      id: 'pricing',
-      name: 'Pricing Request',
-      subject: 'Pricing Information - Delaware Fence Solutions',
-      body: `<p>Hello {{contact_name}},</p>
+  },
+  {
+    id: 'pricing',
+    name: 'Pricing Request',
+    subject: 'Pricing Information - Delaware Fence Solutions',
+    body: `<p>Hello {{contact_name}},</p>
 
 <p>Thank you for your interest in Delaware Fence Solutions! I'm happy to provide pricing on the materials you need.</p>
 
@@ -1282,10 +1281,102 @@ www.delawarefencesolutions.com</span></p>`
 302-610-8901<br/>
 Info@dfs-send.com<br/>
 www.delawarefencesolutions.com</span></p>`
-    }
-  ];
+  }
+];
 
-  res.json(templates);
+// Get email templates (reads from DB, seeds defaults if empty)
+app.get('/email/templates', authenticateToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('email_templates')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    // If no templates in DB, seed defaults
+    if (!data || data.length === 0) {
+      const now = new Date().toISOString();
+      const seeded = DEFAULT_EMAIL_TEMPLATES.map(t => ({
+        ...t,
+        created_at: now,
+        updated_at: now
+      }));
+      const { error: insertErr } = await supabase.from('email_templates').insert(seeded);
+      if (insertErr) throw insertErr;
+      return res.json(seeded);
+    }
+
+    res.json(data);
+  } catch (err) {
+    console.error('Error fetching templates:', err);
+    // Fallback to hardcoded defaults if DB fails
+    res.json(DEFAULT_EMAIL_TEMPLATES);
+  }
+});
+
+// Create email template
+app.post('/email/templates', authenticateToken, async (req, res) => {
+  try {
+    const { name, subject, body } = req.body;
+    if (!name || !subject || !body) {
+      return res.status(400).json({ error: 'Name, subject, and body are required' });
+    }
+
+    const template = {
+      id: `template_${Date.now()}`,
+      name,
+      subject,
+      body,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from('email_templates').insert([template]);
+    if (error) throw error;
+
+    res.json(template);
+  } catch (err) {
+    console.error('Error creating template:', err);
+    res.status(500).json({ error: err.message || 'Failed to create template' });
+  }
+});
+
+// Update email template
+app.put('/email/templates/:id', authenticateToken, async (req, res) => {
+  try {
+    const { name, subject, body } = req.body;
+    if (!name || !subject || !body) {
+      return res.status(400).json({ error: 'Name, subject, and body are required' });
+    }
+
+    const { error } = await supabase
+      .from('email_templates')
+      .update({ name, subject, body, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+    res.json({ message: 'Template updated' });
+  } catch (err) {
+    console.error('Error updating template:', err);
+    res.status(500).json({ error: err.message || 'Failed to update template' });
+  }
+});
+
+// Delete email template
+app.delete('/email/templates/:id', authenticateToken, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('email_templates')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+    res.json({ message: 'Template deleted' });
+  } catch (err) {
+    console.error('Error deleting template:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete template' });
+  }
 });
 
 // ============================================
