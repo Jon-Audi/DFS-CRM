@@ -477,7 +477,7 @@
                 {['dashboard', 'calling', 'companies', 'discover', 'activities', 'employees', ...(user?.role === 'admin' ? ['admin'] : [])].map((tab) => (
                   <button
                     key={tab}
-                    onClick={() => setActiveTab(tab)}
+                    onClick={() => { setViewingCompanyId(null); setActiveTab(tab); }}
                     className={`py-4 px-2 border-b-3 transition-colors capitalize ${
                       activeTab === tab ? 'tab-active' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
                     }`}
