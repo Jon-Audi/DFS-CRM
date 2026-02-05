@@ -1108,7 +1108,7 @@ app.post('/email/send', authenticateToken, async (req, res) => {
       return res.status(500).json({ error: 'Email service not configured. Add RESEND_API_KEY to environment variables.' });
     }
 
-    const fromEmail = process.env.EMAIL_FROM || 'Delaware Fence Solutions <info@dfs-send.com>';
+    const fromEmail = 'Delaware Fence Solutions <info@dfs-send.com>';
 
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
