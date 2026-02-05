@@ -451,22 +451,22 @@
       return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
           <header className="bg-blue-600 dark:bg-gray-800 text-white shadow-lg">
-            <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl font-bold">Delaware Fence Solutions - CRM</h1>
-                <p className="text-blue-100 dark:text-gray-400 text-sm">Welcome, {user?.name || 'User'}</p>
+            <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex justify-between items-center">
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-2xl font-bold truncate">DFS CRM</h1>
+                <p className="text-blue-100 dark:text-gray-400 text-xs sm:text-sm truncate">Welcome, {user?.name || 'User'}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                 <button
                   onClick={toggleDarkMode}
-                  className="p-2 rounded-lg bg-blue-700 dark:bg-gray-700 hover:bg-blue-800 dark:hover:bg-gray-600 transition-colors"
+                  className="p-1.5 sm:p-2 rounded-lg bg-blue-700 dark:bg-gray-700 hover:bg-blue-800 dark:hover:bg-gray-600 transition-colors"
                   title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                 >
                   {darkMode ? '☀️' : '🌙'}
                 </button>
                 <button
                   onClick={onLogout}
-                  className="bg-blue-700 dark:bg-gray-700 hover:bg-blue-800 dark:hover:bg-gray-600 px-4 py-2 rounded-lg transition-colors"
+                  className="bg-blue-700 dark:bg-gray-700 hover:bg-blue-800 dark:hover:bg-gray-600 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg transition-colors text-sm sm:text-base"
                 >
                   Logout
                 </button>
@@ -474,14 +474,14 @@
             </div>
           </header>
 
-          <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
-            <div className="max-w-7xl mx-auto px-4">
-              <div className="flex space-x-8">
+          <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 overflow-x-auto">
+            <div className="max-w-7xl mx-auto px-2 sm:px-4">
+              <div className="flex space-x-1 sm:space-x-6">
                 {['dashboard', 'calling', 'companies', 'discover', 'activities', 'employees', ...(user?.role === 'admin' ? ['admin'] : [])].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => { setViewingCompanyId(null); setActiveTab(tab); }}
-                    className={`py-4 px-2 border-b-3 transition-colors capitalize ${
+                    className={`py-3 sm:py-4 px-2 sm:px-3 border-b-3 transition-colors capitalize whitespace-nowrap text-sm sm:text-base ${
                       activeTab === tab ? 'tab-active' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
                     }`}
                   >
@@ -1542,21 +1542,21 @@
       return (
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Header */}
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">📞 Call Queue</h2>
-            <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <h2 className="text-xl sm:text-2xl font-bold">📞 Call Queue</h2>
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setShowScript(!showScript)}
-                className="px-4 py-2 rounded-lg text-sm bg-purple-600 text-white hover:bg-purple-700"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm bg-purple-600 text-white hover:bg-purple-700"
                 title="View call script and company info"
               >
                 📋 Script
               </button>
               <button
                 onClick={() => setFilter('all')}
-                className={`px-4 py-2 rounded-lg text-sm ${
-                  filter === 'all' 
-                    ? 'bg-blue-600 text-white' 
+                className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm ${
+                  filter === 'all'
+                    ? 'bg-blue-600 text-white'
                     : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
                 }`}
               >
@@ -1564,9 +1564,9 @@
               </button>
               <button
                 onClick={() => { setFilter('prospects'); setCurrentIndex(0); resetForm(); }}
-                className={`px-4 py-2 rounded-lg text-sm ${
-                  filter === 'prospects' 
-                    ? 'bg-blue-600 text-white' 
+                className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm ${
+                  filter === 'prospects'
+                    ? 'bg-blue-600 text-white'
                     : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
                 }`}
               >
@@ -1574,9 +1574,9 @@
               </button>
               <button
                 onClick={() => { setFilter('customers'); setCurrentIndex(0); resetForm(); }}
-                className={`px-4 py-2 rounded-lg text-sm ${
-                  filter === 'customers' 
-                    ? 'bg-blue-600 text-white' 
+                className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm ${
+                  filter === 'customers'
+                    ? 'bg-blue-600 text-white'
                     : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
                 }`}
               >
@@ -1701,34 +1701,38 @@
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
                 {currentCompany.phone && (
                   <div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">📞 Phone:</span>
-                    <p className="text-lg font-semibold text-blue-600 dark:text-blue-400">
-                      {currentCompany.phone}
+                    <span className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">📞 Phone:</span>
+                    <p className="text-base sm:text-lg font-semibold text-blue-600 dark:text-blue-400">
+                      <a href={`tel:${currentCompany.phone}`} className="hover:underline">{currentCompany.phone}</a>
                     </p>
                   </div>
                 )}
                 {currentCompany.address && (
                   <div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">📍 Address:</span>
-                    <p className="text-gray-900 dark:text-gray-100">{currentCompany.address}</p>
-                    <p className="text-gray-600 dark:text-gray-400">
+                    <span className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">📍 Address:</span>
+                    <p className="text-sm sm:text-base text-gray-900 dark:text-gray-100">{currentCompany.address}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
                       {currentCompany.city}, {currentCompany.state} {currentCompany.zip}
                     </p>
                   </div>
                 )}
                 {currentCompany.email && (
                   <div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">✉️ Email:</span>
-                    <p className="text-gray-900 dark:text-gray-100">{currentCompany.email}</p>
+                    <span className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">✉️ Email:</span>
+                    <p className="text-sm sm:text-base text-gray-900 dark:text-gray-100 break-all">
+                      <a href={`mailto:${currentCompany.email}`} className="hover:underline">{currentCompany.email}</a>
+                    </p>
                   </div>
                 )}
                 {currentCompany.website && (
                   <div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">🌐 Website:</span>
-                    <p className="text-gray-900 dark:text-gray-100">{currentCompany.website}</p>
+                    <span className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">🌐 Website:</span>
+                    <p className="text-sm sm:text-base text-gray-900 dark:text-gray-100 break-all">
+                      <a href={currentCompany.website.startsWith('http') ? currentCompany.website : `https://${currentCompany.website}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{currentCompany.website}</a>
+                    </p>
                   </div>
                 )}
               </div>
@@ -1736,9 +1740,28 @@
               {currentCompany.notes && (
                 <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">📝 Notes:</span>
-                  <p className="text-gray-900 dark:text-gray-100 text-sm mt-1 whitespace-pre-wrap">
-                    {currentCompany.notes}
-                  </p>
+                  <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                    {(() => {
+                      const raw = currentCompany.notes || '';
+                      if (raw.trim().startsWith('[')) {
+                        try {
+                          const notesArr = JSON.parse(raw);
+                          return notesArr.slice(0, 5).map((note, idx) => (
+                            <div key={note.id || idx} className="p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-700">
+                              <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 mb-1">
+                                <span className="font-medium">{note.author}</span>
+                                <span>{new Date(note.timestamp).toLocaleDateString()}</span>
+                              </div>
+                              <p className="text-sm text-gray-900 dark:text-gray-100">{note.text}</p>
+                            </div>
+                          ));
+                        } catch (e) {
+                          return <p className="text-gray-900 dark:text-gray-100 text-sm whitespace-pre-wrap">{raw}</p>;
+                        }
+                      }
+                      return <p className="text-gray-900 dark:text-gray-100 text-sm whitespace-pre-wrap">{raw}</p>;
+                    })()}
+                  </div>
                 </div>
               )}
             </div>
@@ -1759,85 +1782,85 @@
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+                <label className="flex items-center p-2 sm:p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={callData.answered}
                     onChange={(e) => setCallData({...callData, answered: e.target.checked})}
-                    className="mr-3 w-4 h-4"
+                    className="mr-2 sm:mr-3 w-4 h-4"
                   />
-                  <span className="text-sm font-medium">✓ Answered</span>
+                  <span className="text-xs sm:text-sm font-medium">✓ Answered</span>
                 </label>
 
-                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                <label className="flex items-center p-2 sm:p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={callData.interested}
                     onChange={(e) => setCallData({...callData, interested: e.target.checked})}
-                    className="mr-3 w-4 h-4"
+                    className="mr-2 sm:mr-3 w-4 h-4"
                   />
-                  <span className="text-sm font-medium">⭐ Interested</span>
+                  <span className="text-xs sm:text-sm font-medium">⭐ Interested</span>
                 </label>
 
-                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                <label className="flex items-center p-2 sm:p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={callData.notInterested}
                     onChange={(e) => setCallData({...callData, notInterested: e.target.checked})}
-                    className="mr-3 w-4 h-4"
+                    className="mr-2 sm:mr-3 w-4 h-4"
                   />
-                  <span className="text-sm font-medium">✗ Not Interested</span>
+                  <span className="text-xs sm:text-sm font-medium">✗ Not Interested</span>
                 </label>
 
-                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                <label className="flex items-center p-2 sm:p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={callData.leftVoicemail}
                     onChange={(e) => setCallData({...callData, leftVoicemail: e.target.checked})}
-                    className="mr-3 w-4 h-4"
+                    className="mr-2 sm:mr-3 w-4 h-4"
                   />
-                  <span className="text-sm font-medium">📞 Left Voicemail</span>
+                  <span className="text-xs sm:text-sm font-medium">📞 Voicemail</span>
                 </label>
 
-                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                <label className="flex items-center p-2 sm:p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={callData.sentEmail}
                     onChange={(e) => setCallData({...callData, sentEmail: e.target.checked})}
-                    className="mr-3 w-4 h-4"
+                    className="mr-2 sm:mr-3 w-4 h-4"
                   />
-                  <span className="text-sm font-medium">✉️ Sent Email</span>
+                  <span className="text-xs sm:text-sm font-medium">✉️ Sent Email</span>
                 </label>
 
-                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                <label className="flex items-center p-2 sm:p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={callData.wantsPricing}
                     onChange={(e) => setCallData({...callData, wantsPricing: e.target.checked})}
-                    className="mr-3 w-4 h-4"
+                    className="mr-2 sm:mr-3 w-4 h-4"
                   />
-                  <span className="text-sm font-medium">💰 Wants Pricing</span>
+                  <span className="text-xs sm:text-sm font-medium">💰 Pricing</span>
                 </label>
 
-                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                <label className="flex items-center p-2 sm:p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={callData.wantsCatalog}
                     onChange={(e) => setCallData({...callData, wantsCatalog: e.target.checked})}
-                    className="mr-3 w-4 h-4"
+                    className="mr-2 sm:mr-3 w-4 h-4"
                   />
-                  <span className="text-sm font-medium">📚 Wants Catalog</span>
+                  <span className="text-xs sm:text-sm font-medium">📚 Catalog</span>
                 </label>
 
-                <label className="flex items-center p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                <label className="flex items-center p-2 sm:p-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={callData.needsFollowUp}
                     onChange={(e) => setCallData({...callData, needsFollowUp: e.target.checked})}
-                    className="mr-3 w-4 h-4"
+                    className="mr-2 sm:mr-3 w-4 h-4"
                   />
-                  <span className="text-sm font-medium">🔔 Needs Follow-up</span>
+                  <span className="text-xs sm:text-sm font-medium">🔔 Follow-up</span>
                 </label>
               </div>
 
@@ -1857,24 +1880,24 @@
           </div>
 
           {/* Navigation Buttons */}
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <button
               onClick={handlePrevious}
               disabled={currentIndex === 0}
-              className="px-6 py-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 sm:px-6 py-2.5 sm:py-3 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base order-2 sm:order-1"
             >
               ← Previous
             </button>
             <button
               onClick={handleSkip}
-              className="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+              className="flex-1 px-4 sm:px-6 py-2.5 sm:py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm sm:text-base order-3 sm:order-2"
             >
               Skip →
             </button>
             <button
               onClick={handleSaveAndNext}
               disabled={saving}
-              className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-300 font-semibold flex items-center justify-center gap-2"
+              className="flex-1 px-4 sm:px-6 py-2.5 sm:py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-300 font-semibold flex items-center justify-center gap-2 text-sm sm:text-base order-1 sm:order-3"
             >
               {saving ? <><Spinner size="sm" /> Saving...</> : 'Save & Next →'}
             </button>
