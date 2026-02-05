@@ -9,7 +9,11 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-key-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('❌ Error: JWT_SECRET environment variable is required');
+  process.exit(1);
+}
 
 // Initialize Supabase
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -33,6 +37,28 @@ const limiter = rateLimit({
   max: 100
 });
 app.use('/api/', limiter);
+
+// Input validation helper
+function validate(fields) {
+  const errors = [];
+  for (const { value, name, rules } of fields) {
+    for (const rule of rules) {
+      if (rule === 'required' && (!value || (typeof value === 'string' && !value.trim()))) {
+        errors.push(`${name} is required`);
+      }
+      if (typeof rule === 'object' && rule.minLength && typeof value === 'string' && value.trim().length < rule.minLength) {
+        errors.push(`${name} must be at least ${rule.minLength} characters`);
+      }
+      if (rule === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        errors.push(`${name} must be a valid email`);
+      }
+      if (rule === 'activityType' && value && !['call', 'email'].includes(value)) {
+        errors.push(`${name} must be 'call' or 'email'`);
+      }
+    }
+  }
+  return errors;
+}
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -59,6 +85,12 @@ const authenticateToken = (req, res, next) => {
 app.post('/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+
+    const errors = validate([
+      { value: username, name: 'Username', rules: ['required'] },
+      { value: password, name: 'Password', rules: ['required'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
     const { data, error } = await supabase
       .from('users')
@@ -115,6 +147,13 @@ app.post('/auth/login', async (req, res) => {
 app.post('/auth/register', async (req, res) => {
   try {
     const { username, password, name, role } = req.body;
+
+    const errors = validate([
+      { value: username, name: 'Username', rules: ['required', { minLength: 3 }] },
+      { value: password, name: 'Password', rules: ['required', { minLength: 6 }] },
+      { value: name, name: 'Name', rules: ['required'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
     const hashedPassword = bcrypt.hashSync(password, 10);
 
@@ -466,6 +505,12 @@ app.post('/companies', authenticateToken, async (req, res) => {
   try {
     const { id, name, type, contact_name, address, city, state, zip, phone, email, website, notes, is_customer, last_order_date, last_estimate_date } = req.body;
 
+    const errors = validate([
+      { value: name, name: 'Company name', rules: ['required'] },
+      { value: email, name: 'Email', rules: ['email'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
+
     const { error } = await supabase
       .from('companies')
       .insert([{
@@ -499,6 +544,12 @@ app.put('/companies/:id', authenticateToken, async (req, res) => {
   try {
     const { name, type, contact_name, address, city, state, zip, phone, email, website, notes, is_customer, last_order_date, last_estimate_date } = req.body;
 
+    const errors = validate([
+      { value: name, name: 'Company name', rules: ['required'] },
+      { value: email, name: 'Email', rules: ['email'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
+
     const { error } = await supabase
       .from('companies')
       .update({
@@ -531,13 +582,28 @@ app.put('/companies/:id', authenticateToken, async (req, res) => {
 
 app.delete('/companies/:id', authenticateToken, async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Verify company exists before deleting
+    const { data: existing } = await supabase
+      .from('companies')
+      .select('id, name')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+
     const { error } = await supabase
       .from('companies')
       .delete()
       .eq('id', req.params.id);
 
     if (error) throw error;
-    await logActivity(req.user.id, 'DELETE', 'company', req.params.id, `Deleted company`);
+    await logActivity(req.user.id, 'DELETE', 'company', req.params.id, `Deleted company: ${existing.name}`);
     res.json({ message: 'Company deleted' });
   } catch (err) {
     console.error('Error deleting company:', err);
@@ -568,6 +634,19 @@ app.post('/employees', authenticateToken, async (req, res) => {
   try {
     const { id, name, role, active, username, password } = req.body;
 
+    const errors = validate([
+      { value: name, name: 'Employee name', rules: ['required'] }
+    ]);
+    if (username || password) {
+      errors.push(...validate([
+        { value: username, name: 'Username', rules: ['required', { minLength: 3 }] },
+        { value: password, name: 'Password', rules: ['required', { minLength: 6 }] }
+      ]));
+    }
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
+
+    let createdUsername = null;
+
     // Create user account if username and password provided
     if (username && password) {
       // Check if username exists
@@ -593,6 +672,7 @@ app.post('/employees', authenticateToken, async (req, res) => {
         }]);
 
       if (userError) throw userError;
+      createdUsername = username;
     }
 
     // Create employee record
@@ -600,7 +680,14 @@ app.post('/employees', authenticateToken, async (req, res) => {
       .from('employees')
       .insert([{ id, name, role, active: active !== false ? 1 : 0 }]);
 
-    if (error) throw error;
+    if (error) {
+      // Rollback: delete the user we just created if employee insert fails
+      if (createdUsername) {
+        await supabase.from('users').delete().eq('username', createdUsername);
+      }
+      throw error;
+    }
+
     res.status(201).json({ message: 'Employee created', id });
   } catch (err) {
     console.error('Error creating employee:', err);
@@ -632,12 +719,36 @@ app.put('/employees/:id', authenticateToken, async (req, res) => {
 
 app.delete('/employees/:id', authenticateToken, async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Verify employee exists and get their name for user account cleanup
+    const { data: existing } = await supabase
+      .from('employees')
+      .select('id, name')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
     const { error } = await supabase
       .from('employees')
       .delete()
       .eq('id', req.params.id);
 
     if (error) throw error;
+
+    // Clean up associated user account (matched by name)
+    await supabase
+      .from('users')
+      .delete()
+      .eq('name', existing.name)
+      .eq('role', 'user');
+
+    await logActivity(req.user.id, 'DELETE', 'employee', req.params.id, `Deleted employee: ${existing.name}`);
     res.json({ message: 'Employee deleted' });
   } catch (err) {
     console.error('Error deleting employee:', err);
@@ -667,6 +778,14 @@ app.get('/activities', authenticateToken, async (req, res) => {
 app.post('/activities', authenticateToken, async (req, res) => {
   try {
     const { id, company_id, employee_id, type, answered, interested, follow_up, notes, date } = req.body;
+
+    const errors = validate([
+      { value: company_id, name: 'Company', rules: ['required'] },
+      { value: employee_id, name: 'Employee', rules: ['required'] },
+      { value: type, name: 'Activity type', rules: ['required', 'activityType'] },
+      { value: date, name: 'Date', rules: ['required'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
     const { error } = await supabase
       .from('activities')

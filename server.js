@@ -9,7 +9,11 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-key-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('❌ Error: JWT_SECRET environment variable is required');
+  process.exit(1);
+}
 
 // Initialize Database
 const db = new Database(process.env.DB_PATH || 'crm.db');
@@ -26,6 +30,28 @@ const limiter = rateLimit({
   max: 100 // limit each IP to 100 requests per windowMs
 });
 app.use('/api/', limiter);
+
+// Input validation helper
+function validate(fields) {
+  const errors = [];
+  for (const { value, name, rules } of fields) {
+    for (const rule of rules) {
+      if (rule === 'required' && (!value || (typeof value === 'string' && !value.trim()))) {
+        errors.push(`${name} is required`);
+      }
+      if (typeof rule === 'object' && rule.minLength && typeof value === 'string' && value.trim().length < rule.minLength) {
+        errors.push(`${name} must be at least ${rule.minLength} characters`);
+      }
+      if (rule === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        errors.push(`${name} must be a valid email`);
+      }
+      if (rule === 'activityType' && value && !['call', 'email'].includes(value)) {
+        errors.push(`${name} must be 'call' or 'email'`);
+      }
+    }
+  }
+  return errors;
+}
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -53,9 +79,12 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password, name, role } = req.body;
 
-    if (!username || !password || !name) {
-      return res.status(400).json({ error: 'All fields required' });
-    }
+    const errors = validate([
+      { value: username, name: 'Username', rules: ['required', { minLength: 3 }] },
+      { value: password, name: 'Password', rules: ['required', { minLength: 6 }] },
+      { value: name, name: 'Name', rules: ['required'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -78,6 +107,12 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+
+    const errors = validate([
+      { value: username, name: 'Username', rules: ['required'] },
+      { value: password, name: 'Password', rules: ['required'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 
@@ -143,7 +178,13 @@ app.get('/api/companies/:id', authenticateToken, (req, res) => {
 app.post('/api/companies', authenticateToken, (req, res) => {
   try {
     const { id, name, type, contact_name, address, city, state, zip, phone, email, website, notes, is_customer, last_order_date, last_estimate_date } = req.body;
-    
+
+    const errors = validate([
+      { value: name, name: 'Company name', rules: ['required'] },
+      { value: email, name: 'Email', rules: ['email'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
+
     const stmt = db.prepare(`
       INSERT INTO companies (id, name, type, contact_name, address, city, state, zip, phone, email, website, notes, is_customer, last_order_date, last_estimate_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -161,7 +202,13 @@ app.post('/api/companies', authenticateToken, (req, res) => {
 app.put('/api/companies/:id', authenticateToken, (req, res) => {
   try {
     const { name, type, contact_name, address, city, state, zip, phone, email, website, notes, is_customer, last_order_date, last_estimate_date } = req.body;
-    
+
+    const errors = validate([
+      { value: name, name: 'Company name', rules: ['required'] },
+      { value: email, name: 'Email', rules: ['email'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
+
     const stmt = db.prepare(`
       UPDATE companies 
       SET name = ?, type = ?, contact_name = ?, address = ?, city = ?, state = ?, zip = ?, 
@@ -214,7 +261,12 @@ app.get('/api/employees', authenticateToken, (req, res) => {
 app.post('/api/employees', authenticateToken, (req, res) => {
   try {
     const { id, name, role, active } = req.body;
-    
+
+    const errors = validate([
+      { value: name, name: 'Employee name', rules: ['required'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
+
     const stmt = db.prepare('INSERT INTO employees (id, name, role, active) VALUES (?, ?, ?, ?)');
     stmt.run(id, name, role, active ? 1 : 0);
     
@@ -282,7 +334,15 @@ app.get('/api/activities', authenticateToken, (req, res) => {
 app.post('/api/activities', authenticateToken, (req, res) => {
   try {
     const { id, company_id, employee_id, type, answered, interested, follow_up, notes, date } = req.body;
-    
+
+    const errors = validate([
+      { value: company_id, name: 'Company', rules: ['required'] },
+      { value: employee_id, name: 'Employee', rules: ['required'] },
+      { value: type, name: 'Activity type', rules: ['required', 'activityType'] },
+      { value: date, name: 'Date', rules: ['required'] }
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
+
     const stmt = db.prepare(`
       INSERT INTO activities (id, company_id, employee_id, type, answered, interested, follow_up, notes, date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -9,9 +9,9 @@ In your Vercel project dashboard, add these environment variables:
 3. Add the following:
 
 ```
-SUPABASE_URL=https://emwgfezkkkdcdmnvnppb.supabase.co
-SUPABASE_ANON_KEY=sb_publishable_hLYtorRZKGiABKc04Mbjew_nyGk7mjU
-JWT_SECRET=H9gKnJTTVLzHOzjnTwIWYkMtrfeGSbFioeQFXTqZC1FAN2fRH/NFNHlr+KkqGvjp
+SUPABASE_URL=your-supabase-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
+JWT_SECRET=your-jwt-secret-here
 NODE_ENV=production
 PORT=3000
 ```
@@ -34,7 +34,7 @@ PORT=3000
 ## Testing After Deployment
 
 1. Visit your Vercel URL
-2. Try logging in with: admin / !Audiffred23
+2. Try logging in with your admin credentials
 3. Verify all features work:
    - Companies tab loads 87 contractors
    - Employees tab works
