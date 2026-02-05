@@ -1007,6 +1007,226 @@ app.get('/stats', authenticateToken, async (req, res) => {
 });
 
 // ============================================
+// REPORTS ROUTES
+// ============================================
+
+// Get activity report data with date range
+app.get('/reports/activity', authenticateToken, async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+
+    let query = supabase.from('activities').select('*');
+
+    if (start_date) {
+      query = query.gte('date', start_date);
+    }
+    if (end_date) {
+      query = query.lte('date', end_date);
+    }
+
+    const { data: activities, error } = await query.order('date', { ascending: true });
+    if (error) throw error;
+
+    // Group activities by date
+    const byDate = {};
+    (activities || []).forEach(a => {
+      const date = a.date?.split('T')[0] || 'unknown';
+      if (!byDate[date]) byDate[date] = { calls: 0, emails: 0, answered: 0, interested: 0 };
+      if (a.type === 'call') byDate[date].calls++;
+      if (a.type === 'email') byDate[date].emails++;
+      if (a.answered) byDate[date].answered++;
+      if (a.interested) byDate[date].interested++;
+    });
+
+    // Group by week
+    const byWeek = {};
+    (activities || []).forEach(a => {
+      const date = new Date(a.date);
+      const weekStart = new Date(date);
+      weekStart.setDate(date.getDate() - date.getDay());
+      const weekKey = weekStart.toISOString().split('T')[0];
+      if (!byWeek[weekKey]) byWeek[weekKey] = { calls: 0, emails: 0, answered: 0, interested: 0 };
+      if (a.type === 'call') byWeek[weekKey].calls++;
+      if (a.type === 'email') byWeek[weekKey].emails++;
+      if (a.answered) byWeek[weekKey].answered++;
+      if (a.interested) byWeek[weekKey].interested++;
+    });
+
+    // Group by month
+    const byMonth = {};
+    (activities || []).forEach(a => {
+      const monthKey = a.date?.substring(0, 7) || 'unknown';
+      if (!byMonth[monthKey]) byMonth[monthKey] = { calls: 0, emails: 0, answered: 0, interested: 0 };
+      if (a.type === 'call') byMonth[monthKey].calls++;
+      if (a.type === 'email') byMonth[monthKey].emails++;
+      if (a.answered) byMonth[monthKey].answered++;
+      if (a.interested) byMonth[monthKey].interested++;
+    });
+
+    res.json({ byDate, byWeek, byMonth, total: activities?.length || 0 });
+  } catch (err) {
+    console.error('Error fetching activity report:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch activity report' });
+  }
+});
+
+// Get conversion funnel data
+app.get('/reports/funnel', authenticateToken, async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+
+    // Get all companies
+    const { data: companies, error: compErr } = await supabase.from('companies').select('id, is_customer, created_at');
+    if (compErr) throw compErr;
+
+    // Get activities with optional date filter
+    let actQuery = supabase.from('activities').select('company_id, answered, interested, type');
+    if (start_date) actQuery = actQuery.gte('date', start_date);
+    if (end_date) actQuery = actQuery.lte('date', end_date);
+    const { data: activities, error: actErr } = await actQuery;
+    if (actErr) throw actErr;
+
+    // Build sets
+    const contactedCompanies = new Set((activities || []).map(a => a.company_id));
+    const answeredCompanies = new Set((activities || []).filter(a => a.answered).map(a => a.company_id));
+    const interestedCompanies = new Set((activities || []).filter(a => a.interested).map(a => a.company_id));
+    const customerCompanies = new Set((companies || []).filter(c => c.is_customer).map(c => c.id));
+
+    res.json({
+      totalCompanies: companies?.length || 0,
+      contacted: contactedCompanies.size,
+      answered: answeredCompanies.size,
+      interested: interestedCompanies.size,
+      customers: customerCompanies.size
+    });
+  } catch (err) {
+    console.error('Error fetching funnel report:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch funnel report' });
+  }
+});
+
+// Get employee performance data
+app.get('/reports/employees', authenticateToken, async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+
+    // Get employees
+    const { data: employees, error: empErr } = await supabase.from('employees').select('id, name, active');
+    if (empErr) throw empErr;
+
+    // Get activities with optional date filter
+    let actQuery = supabase.from('activities').select('employee_id, type, answered, interested, follow_up');
+    if (start_date) actQuery = actQuery.gte('date', start_date);
+    if (end_date) actQuery = actQuery.lte('date', end_date);
+    const { data: activities, error: actErr } = await actQuery;
+    if (actErr) throw actErr;
+
+    // Calculate per-employee stats
+    const employeeStats = (employees || []).map(emp => {
+      const empActivities = (activities || []).filter(a => a.employee_id === emp.id);
+      const calls = empActivities.filter(a => a.type === 'call').length;
+      const emails = empActivities.filter(a => a.type === 'email').length;
+      const answered = empActivities.filter(a => a.answered).length;
+      const interested = empActivities.filter(a => a.interested).length;
+      const followUps = empActivities.filter(a => a.follow_up).length;
+
+      return {
+        id: emp.id,
+        name: emp.name,
+        active: emp.active,
+        calls,
+        emails,
+        totalActivities: empActivities.length,
+        answered,
+        interested,
+        followUps,
+        answerRate: calls > 0 ? Math.round((answered / calls) * 100) : 0,
+        interestRate: answered > 0 ? Math.round((interested / answered) * 100) : 0
+      };
+    });
+
+    // Sort by total activities descending
+    employeeStats.sort((a, b) => b.totalActivities - a.totalActivities);
+
+    res.json(employeeStats);
+  } catch (err) {
+    console.error('Error fetching employee report:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch employee report' });
+  }
+});
+
+// Get pipeline breakdown
+app.get('/reports/pipeline', authenticateToken, async (req, res) => {
+  try {
+    // Get companies with tags
+    const { data: companies, error: compErr } = await supabase.from('companies').select('id, type, tags, is_customer');
+    if (compErr) throw compErr;
+
+    // Get activities for status
+    const { data: activities, error: actErr } = await supabase.from('activities').select('company_id, interested, follow_up');
+    if (actErr) throw actErr;
+
+    // By type
+    const byType = {};
+    (companies || []).forEach(c => {
+      const type = c.type || 'Unknown';
+      if (!byType[type]) byType[type] = { total: 0, customers: 0, prospects: 0 };
+      byType[type].total++;
+      if (c.is_customer) byType[type].customers++;
+      else byType[type].prospects++;
+    });
+
+    // By tag
+    const byTag = {};
+    (companies || []).forEach(c => {
+      try {
+        const tags = JSON.parse(c.tags || '[]');
+        tags.forEach(tag => {
+          if (!byTag[tag]) byTag[tag] = { total: 0, customers: 0, prospects: 0 };
+          byTag[tag].total++;
+          if (c.is_customer) byTag[tag].customers++;
+          else byTag[tag].prospects++;
+        });
+      } catch (e) {}
+    });
+
+    // By status (based on activities)
+    const companyStatuses = {};
+    (activities || []).forEach(a => {
+      if (!companyStatuses[a.company_id]) companyStatuses[a.company_id] = { contacted: false, interested: false, followUp: false };
+      companyStatuses[a.company_id].contacted = true;
+      if (a.interested) companyStatuses[a.company_id].interested = true;
+      if (a.follow_up) companyStatuses[a.company_id].followUp = true;
+    });
+
+    const byStatus = {
+      notContacted: 0,
+      contacted: 0,
+      interested: 0,
+      needsFollowUp: 0,
+      customers: 0
+    };
+
+    (companies || []).forEach(c => {
+      if (c.is_customer) {
+        byStatus.customers++;
+      } else {
+        const status = companyStatuses[c.id];
+        if (!status) byStatus.notContacted++;
+        else if (status.interested) byStatus.interested++;
+        else if (status.followUp) byStatus.needsFollowUp++;
+        else byStatus.contacted++;
+      }
+    });
+
+    res.json({ byType, byTag, byStatus });
+  } catch (err) {
+    console.error('Error fetching pipeline report:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch pipeline report' });
+  }
+});
+
+// ============================================
 // DISCOVER ROUTE (Google Places API)
 // ============================================
 

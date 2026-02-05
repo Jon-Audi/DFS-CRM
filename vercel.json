@@ -75,6 +75,10 @@
       "dest": "/server-supabase.js"
     },
     {
+      "src": "/reports/(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "/public/index.html"
     }
