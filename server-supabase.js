@@ -1227,13 +1227,13 @@ app.get('/email/templates', authenticateToken, async (req, res) => {
 
 <p>Feel free to reply directly to this email or call us at <strong>302-610-8901</strong>. We look forward to hearing from you.</p>
 
-<p>Best regards,<br/>
+<p style="color: #333333; margin-top: 20px;">Best regards,<br/>
 {{sender_name}}<br/>
-<strong>Delaware Fence Solutions</strong><br/>
-1111 Greenbank Road, Wilmington, DE 19808<br/>
+<strong style="color: #222222;">Delaware Fence Solutions</strong><br/>
+<span style="color: #333333;">1111 Greenbank Road, Wilmington, DE 19808<br/>
 302-610-8901<br/>
 Info@dfs-send.com<br/>
-www.delawarefencesolutions.com</p>`
+www.delawarefencesolutions.com</span></p>`
     },
     {
       id: 'follow_up',
@@ -1249,13 +1249,13 @@ www.delawarefencesolutions.com</p>`
 
 <p>Feel free to reach out anytime at <strong>302-610-8901</strong> or reply to this email.</p>
 
-<p>Best regards,<br/>
+<p style="color: #333333; margin-top: 20px;">Best regards,<br/>
 {{sender_name}}<br/>
-<strong>Delaware Fence Solutions</strong><br/>
-1111 Greenbank Road, Wilmington, DE 19808<br/>
+<strong style="color: #222222;">Delaware Fence Solutions</strong><br/>
+<span style="color: #333333;">1111 Greenbank Road, Wilmington, DE 19808<br/>
 302-610-8901<br/>
 Info@dfs-send.com<br/>
-www.delawarefencesolutions.com</p>`
+www.delawarefencesolutions.com</span></p>`
     },
     {
       id: 'pricing',
@@ -1275,13 +1275,13 @@ www.delawarefencesolutions.com</p>`
 
 <p>Once I have these details, I'll put together a competitive quote for you right away.</p>
 
-<p>Best regards,<br/>
+<p style="color: #333333; margin-top: 20px;">Best regards,<br/>
 {{sender_name}}<br/>
-<strong>Delaware Fence Solutions</strong><br/>
-1111 Greenbank Road, Wilmington, DE 19808<br/>
+<strong style="color: #222222;">Delaware Fence Solutions</strong><br/>
+<span style="color: #333333;">1111 Greenbank Road, Wilmington, DE 19808<br/>
 302-610-8901<br/>
 Info@dfs-send.com<br/>
-www.delawarefencesolutions.com</p>`
+www.delawarefencesolutions.com</span></p>`
     }
   ];
 
