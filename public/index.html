@@ -205,9 +205,17 @@
       useEffect(() => {
         const token = api.getToken();
         if (token) {
+          // Decode JWT payload to restore user data on refresh
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            setUser({ id: payload.id, username: payload.username, name: payload.name || payload.username, role: payload.role, employeeId: payload.employeeId });
+          } catch (e) {
+            // Token malformed, clear it
+            api.clearToken();
+          }
           setIsAuthenticated(true);
         }
-        
+
         // Load dark mode preference (default to true)
         const savedDarkMode = localStorage.getItem('darkMode');
         const isDark = savedDarkMode === null ? true : savedDarkMode === 'true';

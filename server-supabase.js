@@ -107,23 +107,21 @@ app.post('/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Get employee record for this user if they're not admin
+    // Get employee record for this user (matched by display name)
     let employeeId = null;
-    if (data.role === 'user') {
-      const { data: employee } = await supabase
-        .from('employees')
-        .select('id')
-        .eq('name', data.name)
-        .eq('active', 1)
-        .single();
-      
-      if (employee) {
-        employeeId = employee.id;
-      }
+    const { data: employee } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('name', data.name)
+      .eq('active', 1)
+      .single();
+
+    if (employee) {
+      employeeId = employee.id;
     }
 
     const token = jwt.sign(
-      { id: data.id, username: data.username, role: data.role, employeeId },
+      { id: data.id, username: data.username, name: data.name, role: data.role, employeeId },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
