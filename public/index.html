@@ -3255,6 +3255,7 @@
         setAddingId(place.google_place_id);
         try {
           await api.createCompany({
+            id: `company_${Date.now()}`,
             name: place.name,
             phone: place.phone,
             address: place.street,
