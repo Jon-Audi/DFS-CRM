@@ -208,12 +208,17 @@
           // Decode JWT payload to restore user data on refresh
           try {
             const payload = JSON.parse(atob(token.split('.')[1]));
-            setUser({ id: payload.id, username: payload.username, name: payload.name || payload.username, role: payload.role, employeeId: payload.employeeId });
+            // Check if token is expired
+            if (payload.exp && payload.exp * 1000 < Date.now()) {
+              api.clearToken();
+            } else {
+              setUser({ id: payload.id, username: payload.username, name: payload.name || payload.username, role: payload.role, employeeId: payload.employeeId });
+              setIsAuthenticated(true);
+            }
           } catch (e) {
             // Token malformed, clear it
             api.clearToken();
           }
-          setIsAuthenticated(true);
         }
 
         // Load dark mode preference (default to true)
