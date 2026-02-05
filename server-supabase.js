@@ -1108,7 +1108,7 @@ app.post('/email/send', authenticateToken, async (req, res) => {
       return res.status(500).json({ error: 'Email service not configured. Add RESEND_API_KEY to environment variables.' });
     }
 
-    const fromEmail = process.env.EMAIL_FROM || 'Delaware Fence Solutions <onboarding@resend.dev>';
+    const fromEmail = process.env.EMAIL_FROM || 'Delaware Fence Solutions <info@delawarefencesupply.com>';
 
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -1231,7 +1231,7 @@ app.get('/email/templates', authenticateToken, async (req, res) => {
 <strong>Delaware Fence Solutions</strong><br/>
 1111 Greenbank Road, Wilmington, DE 19808<br/>
 302-610-8901<br/>
-Info@DelawareFenceSolutions.com<br/>
+Info@DelawareFenceSupply.com<br/>
 www.delawarefencesolutions.com</p>`
     },
     {
@@ -1253,7 +1253,7 @@ www.delawarefencesolutions.com</p>`
 <strong>Delaware Fence Solutions</strong><br/>
 1111 Greenbank Road, Wilmington, DE 19808<br/>
 302-610-8901<br/>
-Info@DelawareFenceSolutions.com<br/>
+Info@DelawareFenceSupply.com<br/>
 www.delawarefencesolutions.com</p>`
     },
     {
@@ -1279,7 +1279,7 @@ www.delawarefencesolutions.com</p>`
 <strong>Delaware Fence Solutions</strong><br/>
 1111 Greenbank Road, Wilmington, DE 19808<br/>
 302-610-8901<br/>
-Info@DelawareFenceSolutions.com<br/>
+Info@DelawareFenceSupply.com<br/>
 www.delawarefencesolutions.com</p>`
     }
   ];
