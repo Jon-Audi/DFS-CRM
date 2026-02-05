@@ -135,7 +135,27 @@
       deleteActivity: (id) => api.request(`/activities/${id}`, { method: 'DELETE' }),
       
       // Stats
-      getStats: () => api.request('/stats')
+      getStats: () => api.request('/stats'),
+
+      // Company Notes
+      addCompanyNote: (id, text) => api.request(`/companies/${id}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ text })
+      }),
+
+      // Company Tags
+      updateCompanyTags: (id, tags) => api.request(`/companies/${id}/tags`, {
+        method: 'PUT',
+        body: JSON.stringify({ tags })
+      }),
+      getAllTags: () => api.request('/tags'),
+
+      // Follow-ups
+      updateFollowUp: (id, data) => api.request(`/companies/${id}/follow-up`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      }),
+      getFollowUps: () => api.request('/follow-ups')
     };
 
     // Reusable Spinner component
@@ -369,6 +389,7 @@
       const [employees, setEmployees] = useState([]);
       const [activities, setActivities] = useState([]);
       const [loading, setLoading] = useState(true);
+      const [viewingCompanyId, setViewingCompanyId] = useState(null);
 
       useEffect(() => {
         loadData();
@@ -462,51 +483,69 @@
           </nav>
 
           <main className="max-w-7xl mx-auto px-4 py-6 dark:text-gray-100">
-            {activeTab === 'dashboard' && (
-              <Dashboard 
-                companies={companies} 
-                activities={activities} 
-                employees={employees}
-                setActiveTab={setActiveTab}
-              />
-            )}
-            {activeTab === 'calling' && (
-              <Calling
-                companies={companies}
-                employees={employees}
-                user={user}
-                onActivityAdded={refreshActivities}
-                onCompanyUpdated={refreshCompanies}
-              />
-            )}
-            {activeTab === 'companies' && (
-              <Companies
+            {viewingCompanyId ? (
+              <CompanyPage
+                companyId={viewingCompanyId}
                 companies={companies}
                 activities={activities}
                 employees={employees}
                 user={user}
-                onRefresh={refreshCompanies}
-                onActivityAdded={refreshActivities}
+                onBack={() => setViewingCompanyId(null)}
+                onRefresh={async () => {
+                  await Promise.all([refreshCompanies(), refreshActivities()]);
+                }}
               />
-            )}
-            {activeTab === 'activities' && (
-              <Activities 
-                activities={activities}
-                companies={companies}
-                employees={employees}
-                onRefresh={refreshActivities}
-              />
-            )}
-            {activeTab === 'employees' && (
-              <Employees 
-                employees={employees}
-                onRefresh={refreshEmployees}
-              />
-            )}
-            {activeTab === 'admin' && user?.role === 'admin' && (
-              <AdminSettings 
-                onRefresh={loadData}
-              />
+            ) : (
+              <>
+                {activeTab === 'dashboard' && (
+                  <Dashboard
+                    companies={companies}
+                    activities={activities}
+                    employees={employees}
+                    setActiveTab={setActiveTab}
+                    onViewCompany={setViewingCompanyId}
+                  />
+                )}
+                {activeTab === 'calling' && (
+                  <Calling
+                    companies={companies}
+                    employees={employees}
+                    user={user}
+                    onActivityAdded={refreshActivities}
+                    onCompanyUpdated={refreshCompanies}
+                  />
+                )}
+                {activeTab === 'companies' && (
+                  <Companies
+                    companies={companies}
+                    activities={activities}
+                    employees={employees}
+                    user={user}
+                    onRefresh={refreshCompanies}
+                    onActivityAdded={refreshActivities}
+                    onViewCompany={setViewingCompanyId}
+                  />
+                )}
+                {activeTab === 'activities' && (
+                  <Activities
+                    activities={activities}
+                    companies={companies}
+                    employees={employees}
+                    onRefresh={refreshActivities}
+                  />
+                )}
+                {activeTab === 'employees' && (
+                  <Employees
+                    employees={employees}
+                    onRefresh={refreshEmployees}
+                  />
+                )}
+                {activeTab === 'admin' && user?.role === 'admin' && (
+                  <AdminSettings
+                    onRefresh={loadData}
+                  />
+                )}
+              </>
             )}
           </main>
         </div>
@@ -1192,19 +1231,23 @@
 
           await api.createActivity(activity);
 
-          // If wants pricing or catalog, add to notes
-          let updatedNotes = currentCompany.notes || '';
+          // Log call outcome as a note via the notes API
           const additions = [];
           if (callData.leftVoicemail) additions.push('Left voicemail');
           if (callData.sentEmail) additions.push('Sent email');
           if (callData.wantsPricing) additions.push('WANTS PRICING');
           if (callData.wantsCatalog) additions.push('WANTS CATALOG');
           if (callData.notInterested) additions.push('Not interested');
+          if (callData.answered) additions.push('Answered');
+          if (callData.interested) additions.push('Interested');
 
-          if (additions.length > 0) {
-            const timestamp = new Date().toLocaleDateString();
-            updatedNotes += (updatedNotes ? '\n' : '') + `[${timestamp}] ${additions.join(', ')}`;
-            await api.updateCompany(currentCompany.id, { ...currentCompany, notes: updatedNotes });
+          const noteText = [
+            additions.length > 0 ? additions.join(', ') : null,
+            callData.notes ? callData.notes : null
+          ].filter(Boolean).join(' - ');
+
+          if (noteText) {
+            await api.addCompanyNote(currentCompany.id, noteText);
             await onCompanyUpdated();
           }
 
@@ -1585,16 +1628,19 @@
     }
 
     // Dashboard Component
-    function Dashboard({ companies, activities, employees, setActiveTab }) {
+    function Dashboard({ companies, activities, employees, setActiveTab, onViewCompany }) {
       const [stats, setStats] = useState(null);
+      const [followUps, setFollowUps] = useState(null);
 
       useEffect(() => {
         api.getStats().then(setStats);
-      }, [activities]);
+        api.getFollowUps().then(setFollowUps).catch(() => {});
+      }, [activities, companies]);
 
       if (!stats) return <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400"><Spinner size="sm" /> Loading statistics...</div>;
 
       const recentActivities = [...activities].slice(0, 5);
+      const hasFollowUps = followUps && (followUps.overdue?.length > 0 || followUps.upcoming?.length > 0);
 
       return (
         <div className="space-y-6">
@@ -1609,6 +1655,64 @@
             <StatCard title="Total Emails" value={stats.totalEmails} color="pink" />
           </div>
 
+          {/* Follow-up Reminders Widget */}
+          {hasFollowUps && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold mb-4">Follow-up Reminders</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Overdue */}
+                {followUps.overdue?.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-red-600 dark:text-red-400 mb-2 uppercase tracking-wide">
+                      Overdue ({followUps.overdue.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {followUps.overdue.slice(0, 5).map(c => (
+                        <div key={c.id} className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900 rounded-lg">
+                          <button
+                            onClick={() => onViewCompany(c.id)}
+                            className="font-medium text-red-700 dark:text-red-300 hover:underline text-sm"
+                          >
+                            {c.name}
+                          </button>
+                          <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">
+                            Due: {new Date(c.follow_up_date).toLocaleDateString()}
+                          </p>
+                          {c.follow_up_note && <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{c.follow_up_note}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Upcoming */}
+                {followUps.upcoming?.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-2 uppercase tracking-wide">
+                      Upcoming ({followUps.upcoming.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {followUps.upcoming.slice(0, 5).map(c => (
+                        <div key={c.id} className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900 rounded-lg">
+                          <button
+                            onClick={() => onViewCompany(c.id)}
+                            className="font-medium text-blue-700 dark:text-blue-300 hover:underline text-sm"
+                          >
+                            {c.name}
+                          </button>
+                          <p className="text-xs text-blue-500 dark:text-blue-400 mt-0.5">
+                            Due: {new Date(c.follow_up_date).toLocaleDateString()}
+                          </p>
+                          {c.follow_up_note && <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{c.follow_up_note}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold mb-4">Recent Activities</h3>
             {recentActivities.length === 0 ? (
@@ -1621,7 +1725,12 @@
                   return (
                     <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
                       <div className="flex-1">
-                        <p className="font-medium">{company?.name || 'Unknown'}</p>
+                        <button
+                          onClick={() => company && onViewCompany(company.id)}
+                          className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {company?.name || 'Unknown'}
+                        </button>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
                           {activity.type === 'call' ? '📞' : '✉️'} {activity.type} by {employee?.name || 'Unknown'}
                           {activity.answered && ' - Answered'}
@@ -1661,30 +1770,41 @@
     }
 
     // Companies Component
-    function Companies({ companies, activities, employees, user, onRefresh, onActivityAdded }) {
+    function Companies({ companies, activities, employees, user, onRefresh, onActivityAdded, onViewCompany }) {
       const [search, setSearch] = useState('');
       const [typeFilter, setTypeFilter] = useState('all');
+      const [tagFilter, setTagFilter] = useState('all');
       const [selectedCompany, setSelectedCompany] = useState(null);
       const [showActivityModal, setShowActivityModal] = useState(false);
       const [showEditModal, setShowEditModal] = useState(false);
-      const [showDetailModal, setShowDetailModal] = useState(false);
       const [editingCompany, setEditingCompany] = useState(null);
-      const [viewingCompany, setViewingCompany] = useState(null);
       const [currentPage, setCurrentPage] = useState(1);
+      const [allTags, setAllTags] = useState([]);
       const perPage = 25;
+
+      useEffect(() => {
+        api.getAllTags().then(setAllTags).catch(() => {});
+      }, [companies]);
 
       const filtered = companies.filter(company => {
         const matchesSearch = company.name.toLowerCase().includes(search.toLowerCase()) ||
                             (company.city || '').toLowerCase().includes(search.toLowerCase());
         const matchesType = typeFilter === 'all' || company.type === typeFilter;
-        return matchesSearch && matchesType;
+        let matchesTag = true;
+        if (tagFilter !== 'all') {
+          try {
+            const companyTags = JSON.parse(company.tags || '[]');
+            matchesTag = companyTags.includes(tagFilter);
+          } catch (e) { matchesTag = false; }
+        }
+        return matchesSearch && matchesType && matchesTag;
       });
 
       const totalPages = Math.ceil(filtered.length / perPage);
       const paginatedCompanies = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
       // Reset to page 1 when filters change
-      useEffect(() => { setCurrentPage(1); }, [search, typeFilter]);
+      useEffect(() => { setCurrentPage(1); }, [search, typeFilter, tagFilter]);
 
       const types = [...new Set(companies.map(c => c.type))].filter(Boolean);
 
@@ -1706,15 +1826,8 @@
 
       const handleCompanySaved = async () => {
         setShowEditModal(false);
-        setShowDetailModal(false);
         setEditingCompany(null);
-        setViewingCompany(null);
         await onRefresh();
-      };
-
-      const handleViewCompany = (company) => {
-        setViewingCompany(company);
-        setShowDetailModal(true);
       };
 
       const calculateDaysSince = (dateString) => {
@@ -1755,6 +1868,18 @@
                 <option key={type} value={type}>{type}</option>
               ))}
             </select>
+            {allTags.length > 0 && (
+              <select
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+                className="px-4 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              >
+                <option value="all">All Tags</option>
+                {allTags.map(tag => (
+                  <option key={tag} value={tag}>{tag}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
@@ -1782,12 +1907,17 @@
                     <tr key={company.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-6 py-4">
                         <button
-                          onClick={() => handleViewCompany(company)}
+                          onClick={() => onViewCompany(company.id)}
                           className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline text-left"
                         >
                           {company.name}
                         </button>
                         {company.website && <div className="text-sm text-gray-500 dark:text-gray-400">{company.website}</div>}
+                        {(() => { try { const t = JSON.parse(company.tags || '[]'); return t.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 mt-1">{t.map(tag => (
+                            <span key={tag} className="px-1.5 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded">{tag}</span>
+                          ))}</div>
+                        ) : null; } catch(e) { return null; } })()}
                       </td>
                       <td className="px-6 py-4">
                         <span className="px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
@@ -1872,27 +2002,6 @@
               onClose={() => {
                 setShowEditModal(false);
                 setEditingCompany(null);
-              }}
-              onSave={handleCompanySaved}
-            />
-          )}
-          
-          {showDetailModal && viewingCompany && (
-            <CompanyDetailModal
-              company={viewingCompany}
-              activities={activities.filter(a => a.company_id === viewingCompany.id)}
-              employees={employees}
-              onClose={() => {
-                setShowDetailModal(false);
-                setViewingCompany(null);
-              }}
-              onEdit={() => {
-                setEditingCompany(viewingCompany);
-                setShowEditModal(true);
-              }}
-              onLogActivity={() => {
-                setSelectedCompany(viewingCompany);
-                setShowActivityModal(true);
               }}
               onSave={handleCompanySaved}
             />
@@ -2596,285 +2705,492 @@
       );
     }
 
-    // Company Detail Modal
-    function CompanyDetailModal({ company, activities, employees, onClose, onEdit, onLogActivity, onSave }) {
-      const [notes, setNotes] = useState(company.notes || '');
-      const [saving, setSaving] = useState(false);
-      const [editingNotes, setEditingNotes] = useState(false);
+    // Full-page Company View
+    function CompanyPage({ companyId, companies, activities, employees, user, onBack, onRefresh }) {
+      const [activeSection, setActiveSection] = useState('info');
+      const [newNote, setNewNote] = useState('');
+      const [savingNote, setSavingNote] = useState(false);
+      const [showEditModal, setShowEditModal] = useState(false);
+      const [showActivityModal, setShowActivityModal] = useState(false);
+      const [newTag, setNewTag] = useState('');
+      const [savingTags, setSavingTags] = useState(false);
+      const [suggestedTags, setSuggestedTags] = useState([]);
+      const [followUpDate, setFollowUpDate] = useState('');
+      const [followUpNote, setFollowUpNote] = useState('');
+      const [savingFollowUp, setSavingFollowUp] = useState(false);
+      const [editingFollowUp, setEditingFollowUp] = useState(false);
+
+      const company = companies.find(c => c.id === companyId);
+      const companyActivities = activities.filter(a => a.company_id === companyId).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      useEffect(() => {
+        api.getAllTags().then(setSuggestedTags).catch(() => {});
+      }, []);
+
+      useEffect(() => {
+        if (company) {
+          setFollowUpDate(company.follow_up_date ? company.follow_up_date.split('T')[0] : '');
+          setFollowUpNote(company.follow_up_note || '');
+        }
+      }, [company?.follow_up_date, company?.follow_up_note]);
+
+      if (!company) {
+        return (
+          <div className="text-center py-12">
+            <p className="text-gray-600 dark:text-gray-400">Company not found.</p>
+            <button onClick={onBack} className="mt-4 text-blue-600 dark:text-blue-400 hover:underline">Go back</button>
+          </div>
+        );
+      }
+
+      // Parse notes
+      let notesArr = [];
+      const rawNotes = company.notes || '';
+      if (rawNotes.trim().startsWith('[')) {
+        try { notesArr = JSON.parse(rawNotes); } catch (e) {}
+      } else if (rawNotes.trim()) {
+        notesArr = [{ id: 'legacy_1', author: 'System', text: rawNotes, timestamp: company.created_at }];
+      }
+
+      // Parse tags
+      let companyTags = [];
+      try { companyTags = JSON.parse(company.tags || '[]'); } catch (e) {}
 
       const calculateDaysSince = (dateString) => {
         if (!dateString) return null;
-        const date = new Date(dateString);
-        const now = new Date();
-        return Math.floor((now - date) / (1000 * 60 * 60 * 24));
-      };
-
-      const handleSaveNotes = async () => {
-        setSaving(true);
-        try {
-          await api.updateCompany(company.id, { ...company, notes });
-          setEditingNotes(false);
-          await onSave();
-        } catch (err) {
-          alert('Failed to save notes');
-        } finally {
-          setSaving(false);
-        }
+        return Math.floor((new Date() - new Date(dateString)) / (1000 * 60 * 60 * 24));
       };
 
       const daysSinceOrder = calculateDaysSince(company.last_order_date);
       const daysSinceEstimate = calculateDaysSince(company.last_estimate_date);
 
-      const companyActivities = activities.filter(a => a.company_id === company.id);
+      const handleAddNote = async () => {
+        if (!newNote.trim()) return;
+        setSavingNote(true);
+        try {
+          await api.addCompanyNote(company.id, newNote);
+          setNewNote('');
+          await onRefresh();
+        } catch (err) {
+          alert('Failed to add note');
+        } finally {
+          setSavingNote(false);
+        }
+      };
+
+      const handleAddTag = async (tag) => {
+        const tagToAdd = (tag || newTag).trim();
+        if (!tagToAdd || companyTags.includes(tagToAdd)) return;
+        setSavingTags(true);
+        try {
+          await api.updateCompanyTags(company.id, [...companyTags, tagToAdd]);
+          setNewTag('');
+          await onRefresh();
+        } catch (err) {
+          alert('Failed to add tag');
+        } finally {
+          setSavingTags(false);
+        }
+      };
+
+      const handleRemoveTag = async (tag) => {
+        setSavingTags(true);
+        try {
+          await api.updateCompanyTags(company.id, companyTags.filter(t => t !== tag));
+          await onRefresh();
+        } catch (err) {
+          alert('Failed to remove tag');
+        } finally {
+          setSavingTags(false);
+        }
+      };
+
+      const handleSaveFollowUp = async () => {
+        setSavingFollowUp(true);
+        try {
+          await api.updateFollowUp(company.id, {
+            follow_up_date: followUpDate || null,
+            follow_up_note: followUpNote || null
+          });
+          setEditingFollowUp(false);
+          await onRefresh();
+        } catch (err) {
+          alert('Failed to update follow-up');
+        } finally {
+          setSavingFollowUp(false);
+        }
+      };
+
+      const handleClearFollowUp = async () => {
+        setSavingFollowUp(true);
+        try {
+          await api.updateFollowUp(company.id, { follow_up_date: null, follow_up_note: null });
+          setFollowUpDate('');
+          setFollowUpNote('');
+          setEditingFollowUp(false);
+          await onRefresh();
+        } catch (err) {
+          alert('Failed to clear follow-up');
+        } finally {
+          setSavingFollowUp(false);
+        }
+      };
+
+      const isOverdue = company.follow_up_date && company.follow_up_date.split('T')[0] < new Date().toISOString().split('T')[0];
+
+      const defaultSuggestions = ['Hot Lead', 'VIP', 'Needs Quote', 'Needs Follow-up', 'Not Interested', 'Pricing Sent'];
+      const allSuggestions = [...new Set([...defaultSuggestions, ...suggestedTags])].filter(t => !companyTags.includes(t));
+
+      const sections = ['info', 'notes', 'activities'];
 
       return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex justify-between items-start mb-6">
-              <div>
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex justify-between items-start">
+            <div>
+              <button onClick={onBack} className="text-sm text-blue-600 dark:text-blue-400 hover:underline mb-2 inline-flex items-center gap-1">
+                ← Back to Companies
+              </button>
+              <div className="flex items-center gap-3">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{company.name}</h2>
-                <p className="text-gray-600 dark:text-gray-400">{company.type}</p>
-                {company.contact_name && (
-                  <p className="text-gray-700 dark:text-gray-300 mt-1">👤 Contact: <span className="font-semibold">{company.contact_name}</span></p>
-                )}
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  company.is_customer
+                    ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+                }`}>
+                  {company.is_customer ? '✓ Customer' : 'Prospect'}
+                </span>
               </div>
+              <p className="text-gray-600 dark:text-gray-400">{company.type} {company.city && company.state ? `• ${company.city}, ${company.state}` : ''}</p>
+            </div>
+            <div className="flex gap-2">
               <button
-                onClick={onClose}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl font-bold"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Contact Info and Customer Status Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              {/* Contact Information */}
-              <div className="space-y-3">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b dark:border-gray-700 pb-2">
-                  Contact Information
-                </h3>
-                <div className="space-y-3 text-sm">
-                  {company.address && (
-                    <div>
-                      <span className="font-medium text-gray-700 dark:text-gray-300">📍 Address:</span>
-                      <p className="text-gray-600 dark:text-gray-400 ml-5">{company.address}</p>
-                      <p className="text-gray-600 dark:text-gray-400 ml-5">
-                        {company.city}, {company.state} {company.zip}
-                      </p>
-                    </div>
-                  )}
-                  {company.phone && (
-                    <div>
-                      <span className="font-medium text-gray-700 dark:text-gray-300">📞 Phone:</span>
-                      <p className="text-gray-600 dark:text-gray-400 ml-5">{company.phone}</p>
-                    </div>
-                  )}
-                  {company.email && (
-                    <div>
-                      <span className="font-medium text-gray-700 dark:text-gray-300">✉️ Email:</span>
-                      <p className="text-gray-600 dark:text-gray-400 ml-5">{company.email}</p>
-                    </div>
-                  )}
-                  {company.website && (
-                    <div>
-                      <span className="font-medium text-gray-700 dark:text-gray-300">🌐 Website:</span>
-                      <p className="text-gray-600 dark:text-gray-400 ml-5">{company.website}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Customer Status */}
-              <div className="space-y-3">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b dark:border-gray-700 pb-2">
-                  Customer Status
-                </h3>
-                <div className="space-y-3">
-                  <div>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      company.is_customer 
-                        ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' 
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
-                    }`}>
-                      {company.is_customer ? '✓ Current Customer' : '🔍 Prospect'}
-                    </span>
-                  </div>
-                  
-                  {company.is_customer && (
-                    <div className="space-y-2 text-sm">
-                      {company.last_order_date && (
-                        <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                          <span className="font-medium text-gray-700 dark:text-gray-300">Last Order:</span>
-                          <p className="text-gray-600 dark:text-gray-400 mt-1">
-                            {new Date(company.last_order_date).toLocaleDateString()}
-                            {daysSinceOrder !== null && (
-                              <span className="ml-2 px-2 py-0.5 bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 rounded text-xs">
-                                {daysSinceOrder} days ago
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      )}
-                      
-                      {company.last_estimate_date && (
-                        <div className="p-3 bg-green-50 dark:bg-green-900/30 rounded-lg">
-                          <span className="font-medium text-gray-700 dark:text-gray-300">Last Estimate:</span>
-                          <p className="text-gray-600 dark:text-gray-400 mt-1">
-                            {new Date(company.last_estimate_date).toLocaleDateString()}
-                            {daysSinceEstimate !== null && (
-                              <span className="ml-2 px-2 py-0.5 bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 rounded text-xs">
-                                {daysSinceEstimate} days ago
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Notes Section */}
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notes</h3>
-                {!editingNotes && (
-                  <button
-                    onClick={() => setEditingNotes(true)}
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-                  >
-                    ✏️ Edit
-                  </button>
-                )}
-              </div>
-              
-              {editingNotes ? (
-                <div>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={4}
-                    className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                    placeholder="Add notes about this company..."
-                  />
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={handleSaveNotes}
-                      disabled={saving}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 text-sm"
-                    >
-                      {saving ? 'Saving...' : 'Save Notes'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingNotes(false);
-                        setNotes(company.notes || '');
-                      }}
-                      className="px-4 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-gray-700 dark:text-gray-300 min-h-[100px]">
-                  {company.notes || 'No notes yet. Click Edit to add notes about this company.'}
-                </div>
-              )}
-            </div>
-
-            {/* Activity History */}
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">
-                Activity History ({companyActivities.length})
-              </h3>
-              
-              {companyActivities.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-sm p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-center">
-                  No activities logged yet. Click "Log Activity" to add one.
-                </p>
-              ) : (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {companyActivities.map((activity) => {
-                    const employee = employees.find(e => e.id === activity.employee_id);
-                    return (
-                      <div
-                        key={activity.id}
-                        className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                activity.type === 'call' 
-                                  ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' 
-                                  : 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200'
-                              }`}>
-                                {activity.type === 'call' ? '📞 Call' : '✉️ Email'}
-                              </span>
-                              <span className="text-gray-600 dark:text-gray-400">
-                                by {employee?.name || 'Unknown'}
-                              </span>
-                            </div>
-                            
-                            <div className="flex gap-2 mb-1 flex-wrap">
-                              {activity.answered && (
-                                <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
-                                  ✓ Answered
-                                </span>
-                              )}
-                              {activity.interested && (
-                                <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
-                                  ⭐ Interested
-                                </span>
-                              )}
-                              {activity.follow_up && (
-                                <span className="px-2 py-0.5 text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded">
-                                  🔔 Follow-up
-                                </span>
-                              )}
-                            </div>
-                            
-                            {activity.notes && (
-                              <p className="text-gray-700 dark:text-gray-300 mt-1">{activity.notes}</p>
-                            )}
-                          </div>
-                          
-                          <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap ml-2">
-                            {new Date(activity.date).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-4 border-t dark:border-gray-700">
-              <button
-                onClick={onEdit}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Edit Company
-              </button>
-              <button
-                onClick={onLogActivity}
-                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                onClick={() => setShowActivityModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
               >
                 Log Activity
               </button>
               <button
-                onClick={onClose}
-                className="px-6 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                onClick={() => setShowEditModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
               >
-                Close
+                Edit
               </button>
             </div>
           </div>
+
+          {/* Section Tabs */}
+          <div className="flex space-x-1 border-b border-gray-200 dark:border-gray-700">
+            {sections.map(s => (
+              <button
+                key={s}
+                onClick={() => setActiveSection(s)}
+                className={`px-4 py-2 font-medium text-sm capitalize ${
+                  activeSection === s
+                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                {s === 'info' ? 'Info' : s === 'notes' ? `Notes (${notesArr.length})` : `Activities (${companyActivities.length})`}
+              </button>
+            ))}
+          </div>
+
+          {/* Info Section */}
+          {activeSection === 'info' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left: Contact Details */}
+              <div className="lg:col-span-2 space-y-6">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">Contact Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    {company.contact_name && (
+                      <div>
+                        <span className="font-medium text-gray-500 dark:text-gray-400">Contact</span>
+                        <p className="text-gray-900 dark:text-gray-100 font-medium">{company.contact_name}</p>
+                      </div>
+                    )}
+                    {company.phone && (
+                      <div>
+                        <span className="font-medium text-gray-500 dark:text-gray-400">Phone</span>
+                        <p className="text-blue-600 dark:text-blue-400 font-medium">{company.phone}</p>
+                      </div>
+                    )}
+                    {company.email && (
+                      <div>
+                        <span className="font-medium text-gray-500 dark:text-gray-400">Email</span>
+                        <p className="text-gray-900 dark:text-gray-100">{company.email}</p>
+                      </div>
+                    )}
+                    {company.website && (
+                      <div>
+                        <span className="font-medium text-gray-500 dark:text-gray-400">Website</span>
+                        <p className="text-gray-900 dark:text-gray-100">{company.website}</p>
+                      </div>
+                    )}
+                    {company.address && (
+                      <div className="md:col-span-2">
+                        <span className="font-medium text-gray-500 dark:text-gray-400">Address</span>
+                        <p className="text-gray-900 dark:text-gray-100">{company.address}</p>
+                        <p className="text-gray-600 dark:text-gray-400">{company.city}, {company.state} {company.zip}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {company.is_customer && (
+                    <div className="mt-4 pt-4 border-t dark:border-gray-700 grid grid-cols-2 gap-4 text-sm">
+                      {company.last_order_date && (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                          <span className="font-medium text-gray-600 dark:text-gray-400">Last Order</span>
+                          <p className="text-gray-900 dark:text-gray-100">
+                            {new Date(company.last_order_date).toLocaleDateString()}
+                            {daysSinceOrder !== null && <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">({daysSinceOrder}d ago)</span>}
+                          </p>
+                        </div>
+                      )}
+                      {company.last_estimate_date && (
+                        <div className="p-3 bg-green-50 dark:bg-green-900/30 rounded-lg">
+                          <span className="font-medium text-gray-600 dark:text-gray-400">Last Estimate</span>
+                          <p className="text-gray-900 dark:text-gray-100">
+                            {new Date(company.last_estimate_date).toLocaleDateString()}
+                            {daysSinceEstimate !== null && <span className="ml-1 text-xs text-green-600 dark:text-green-400">({daysSinceEstimate}d ago)</span>}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: Tags + Follow-up */}
+              <div className="space-y-6">
+                {/* Tags */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                  <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Tags</h3>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {companyTags.length === 0 && <span className="text-sm text-gray-400 dark:text-gray-500">No tags</span>}
+                    {companyTags.map(tag => (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded text-sm">
+                        {tag}
+                        <button onClick={() => handleRemoveTag(tag)} className="ml-0.5 text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200 font-bold">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTag}
+                      onChange={(e) => setNewTag(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+                      placeholder="Add tag..."
+                      className="flex-1 px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                    <button
+                      onClick={() => handleAddTag()}
+                      disabled={savingTags || !newTag.trim()}
+                      className="px-3 py-1 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {allSuggestions.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Suggestions:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {allSuggestions.slice(0, 8).map(tag => (
+                          <button
+                            key={tag}
+                            onClick={() => handleAddTag(tag)}
+                            className="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900 hover:text-indigo-700 dark:hover:text-indigo-300"
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Follow-up Reminder */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                  <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100 uppercase tracking-wide">Follow-up Reminder</h3>
+                  {company.follow_up_date && !editingFollowUp ? (
+                    <div>
+                      <div className={`p-3 rounded-lg ${isOverdue ? 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800' : 'bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800'}`}>
+                        <p className={`text-sm font-medium ${isOverdue ? 'text-red-700 dark:text-red-300' : 'text-blue-700 dark:text-blue-300'}`}>
+                          {isOverdue ? 'OVERDUE' : 'Upcoming'}: {new Date(company.follow_up_date).toLocaleDateString()}
+                        </p>
+                        {company.follow_up_note && <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{company.follow_up_note}</p>}
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => setEditingFollowUp(true)} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">Edit</button>
+                        <button onClick={handleClearFollowUp} className="text-sm text-red-600 dark:text-red-400 hover:underline">Clear</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {!editingFollowUp && !company.follow_up_date && (
+                        <p className="text-sm text-gray-400 dark:text-gray-500 mb-2">No reminder set</p>
+                      )}
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Date</label>
+                        <input
+                          type="date"
+                          value={followUpDate}
+                          onChange={(e) => { setFollowUpDate(e.target.value); setEditingFollowUp(true); }}
+                          className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Note (optional)</label>
+                        <textarea
+                          value={followUpNote}
+                          onChange={(e) => { setFollowUpNote(e.target.value); setEditingFollowUp(true); }}
+                          rows="2"
+                          className="w-full px-2 py-1 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Reminder note..."
+                        />
+                      </div>
+                      {editingFollowUp && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleSaveFollowUp}
+                            disabled={savingFollowUp}
+                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {savingFollowUp ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingFollowUp(false);
+                              setFollowUpDate(company.follow_up_date ? company.follow_up_date.split('T')[0] : '');
+                              setFollowUpNote(company.follow_up_note || '');
+                            }}
+                            className="px-3 py-1 text-sm border dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Notes Section */}
+          {activeSection === 'notes' && (
+            <div className="space-y-4">
+              {/* Add Note Form */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+                <textarea
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  rows="3"
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Add a note about this company..."
+                />
+                <div className="flex justify-end mt-2">
+                  <button
+                    onClick={handleAddNote}
+                    disabled={savingNote || !newNote.trim()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm flex items-center gap-2"
+                  >
+                    {savingNote ? <><Spinner size="sm" /> Adding...</> : 'Add Note'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Conversation Log */}
+              {notesArr.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 dark:text-gray-500">
+                  No notes yet. Add the first note above.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {notesArr.map((note) => (
+                    <div key={note.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex gap-3">
+                      <div className="flex-shrink-0 w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center justify-center text-sm font-bold">
+                        {(note.author || '?')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm text-gray-900 dark:text-gray-100">{note.author}</span>
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            {note.timestamp ? new Date(note.timestamp).toLocaleString() : ''}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{note.text}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Activities Section */}
+          {activeSection === 'activities' && (
+            <div className="space-y-3">
+              {companyActivities.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 dark:text-gray-500">
+                  No activities logged yet. Click "Log Activity" to add one.
+                </div>
+              ) : (
+                companyActivities.map((activity) => {
+                  const emp = employees.find(e => e.id === activity.employee_id);
+                  return (
+                    <div key={activity.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              activity.type === 'call'
+                                ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
+                                : 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200'
+                            }`}>
+                              {activity.type === 'call' ? '📞 Call' : '✉️ Email'}
+                            </span>
+                            <span className="text-sm text-gray-600 dark:text-gray-400">by {emp?.name || 'Unknown'}</span>
+                          </div>
+                          <div className="flex gap-2 flex-wrap mb-1">
+                            {activity.answered && <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">Answered</span>}
+                            {activity.interested && <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">Interested</span>}
+                            {activity.follow_up && <span className="px-2 py-0.5 text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded">Follow-up</span>}
+                          </div>
+                          {activity.notes && <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{activity.notes}</p>}
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap ml-3">
+                          {new Date(activity.date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* Edit Modal */}
+          {showEditModal && (
+            <CompanyEditModal
+              company={company}
+              onClose={() => setShowEditModal(false)}
+              onSave={async () => { setShowEditModal(false); await onRefresh(); }}
+            />
+          )}
+
+          {/* Activity Modal */}
+          {showActivityModal && (
+            <ActivityModal
+              company={company}
+              employees={employees}
+              user={user}
+              onClose={() => setShowActivityModal(false)}
+              onSave={async () => { setShowActivityModal(false); await onRefresh(); }}
+            />
+          )}
         </div>
       );
     }

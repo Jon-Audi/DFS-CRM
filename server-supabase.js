@@ -540,7 +540,7 @@ app.post('/companies', authenticateToken, async (req, res) => {
 
 app.put('/companies/:id', authenticateToken, async (req, res) => {
   try {
-    const { name, type, contact_name, address, city, state, zip, phone, email, website, notes, is_customer, last_order_date, last_estimate_date } = req.body;
+    const { name, type, contact_name, address, city, state, zip, phone, email, website, notes, is_customer, last_order_date, last_estimate_date, tags, follow_up_date, follow_up_note } = req.body;
 
     const errors = validate([
       { value: name, name: 'Company name', rules: ['required'] },
@@ -548,25 +548,32 @@ app.put('/companies/:id', authenticateToken, async (req, res) => {
     ]);
     if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
+    const updateData = {
+      name,
+      type,
+      contact_name: contact_name || null,
+      address,
+      city,
+      state,
+      zip,
+      phone,
+      email,
+      website,
+      notes,
+      is_customer: is_customer ? 1 : 0,
+      last_order_date: last_order_date || null,
+      last_estimate_date: last_estimate_date || null,
+      updated_at: new Date().toISOString()
+    };
+
+    // Include new fields if provided
+    if (tags !== undefined) updateData.tags = typeof tags === 'string' ? tags : JSON.stringify(tags);
+    if (follow_up_date !== undefined) updateData.follow_up_date = follow_up_date || null;
+    if (follow_up_note !== undefined) updateData.follow_up_note = follow_up_note || null;
+
     const { error } = await supabase
       .from('companies')
-      .update({
-        name,
-        type,
-        contact_name: contact_name || null,
-        address,
-        city,
-        state,
-        zip,
-        phone,
-        email,
-        website,
-        notes,
-        is_customer: is_customer ? 1 : 0,
-        last_order_date: last_order_date || null,
-        last_estimate_date: last_estimate_date || null,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', req.params.id);
 
     if (error) throw error;
@@ -606,6 +613,148 @@ app.delete('/companies/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Error deleting company:', err);
     res.status(500).json({ error: err.message || 'Failed to delete company' });
+  }
+});
+
+// ============================================
+// COMPANY SUB-ROUTES (Notes, Tags, Follow-ups)
+// ============================================
+
+// Add a note to a company
+app.post('/companies/:id/notes', authenticateToken, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Note text is required' });
+    }
+
+    // Get current company notes
+    const { data: company, error: fetchErr } = await supabase
+      .from('companies')
+      .select('notes')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    // Parse existing notes: if JSON array, use it; otherwise migrate plain text
+    let notesArr = [];
+    const raw = company.notes || '';
+    if (raw.trim().startsWith('[')) {
+      try { notesArr = JSON.parse(raw); } catch (e) { notesArr = []; }
+    } else if (raw.trim()) {
+      // Migrate legacy plain text as first entry
+      notesArr = [{ id: 'legacy_1', author: 'System', text: raw, timestamp: company.created_at || new Date().toISOString() }];
+    }
+
+    // Prepend new note
+    const newNote = {
+      id: `note_${Date.now()}`,
+      author: req.user.name || req.user.username,
+      text: text.trim(),
+      timestamp: new Date().toISOString()
+    };
+    notesArr.unshift(newNote);
+
+    const { error } = await supabase
+      .from('companies')
+      .update({ notes: JSON.stringify(notesArr), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+    res.json({ note: newNote, notes: notesArr });
+  } catch (err) {
+    console.error('Error adding note:', err);
+    res.status(500).json({ error: err.message || 'Failed to add note' });
+  }
+});
+
+// Update company tags
+app.put('/companies/:id/tags', authenticateToken, async (req, res) => {
+  try {
+    const { tags } = req.body;
+    if (!Array.isArray(tags)) {
+      return res.status(400).json({ error: 'Tags must be an array' });
+    }
+
+    const { error } = await supabase
+      .from('companies')
+      .update({ tags: JSON.stringify(tags), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+    res.json({ message: 'Tags updated', tags });
+  } catch (err) {
+    console.error('Error updating tags:', err);
+    res.status(500).json({ error: err.message || 'Failed to update tags' });
+  }
+});
+
+// Update company follow-up reminder
+app.put('/companies/:id/follow-up', authenticateToken, async (req, res) => {
+  try {
+    const { follow_up_date, follow_up_note } = req.body;
+
+    const { error } = await supabase
+      .from('companies')
+      .update({
+        follow_up_date: follow_up_date || null,
+        follow_up_note: follow_up_note || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+    res.json({ message: 'Follow-up updated' });
+  } catch (err) {
+    console.error('Error updating follow-up:', err);
+    res.status(500).json({ error: err.message || 'Failed to update follow-up' });
+  }
+});
+
+// Get all follow-ups
+app.get('/follow-ups', authenticateToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('id, name, type, follow_up_date, follow_up_note')
+      .not('follow_up_date', 'is', null)
+      .order('follow_up_date', { ascending: true });
+
+    if (error) throw error;
+
+    const now = new Date().toISOString().split('T')[0];
+    const overdue = (data || []).filter(c => c.follow_up_date && c.follow_up_date.split('T')[0] < now);
+    const upcoming = (data || []).filter(c => c.follow_up_date && c.follow_up_date.split('T')[0] >= now);
+
+    res.json({ overdue, upcoming });
+  } catch (err) {
+    console.error('Error fetching follow-ups:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch follow-ups' });
+  }
+});
+
+// Get all unique tags
+app.get('/tags', authenticateToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('tags');
+
+    if (error) throw error;
+
+    const allTags = new Set();
+    (data || []).forEach(c => {
+      try {
+        const parsed = JSON.parse(c.tags || '[]');
+        parsed.forEach(t => allTags.add(t));
+      } catch (e) {}
+    });
+
+    res.json([...allTags].sort());
+  } catch (err) {
+    console.error('Error fetching tags:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch tags' });
   }
 });
 

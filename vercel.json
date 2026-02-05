@@ -59,6 +59,14 @@
       "dest": "/server-supabase.js"
     },
     {
+      "src": "/follow-ups(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
+      "src": "/tags(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "/public/index.html"
     }
