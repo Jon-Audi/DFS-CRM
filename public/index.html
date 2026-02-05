@@ -155,7 +155,10 @@
         method: 'PUT',
         body: JSON.stringify(data)
       }),
-      getFollowUps: () => api.request('/follow-ups')
+      getFollowUps: () => api.request('/follow-ups'),
+
+      // Discover
+      discoverCompanies: (query, location) => api.request(`/discover?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location || '')}`)
     };
 
     // Reusable Spinner component
@@ -467,7 +470,7 @@
           <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
             <div className="max-w-7xl mx-auto px-4">
               <div className="flex space-x-8">
-                {['dashboard', 'calling', 'companies', 'activities', 'employees', ...(user?.role === 'admin' ? ['admin'] : [])].map((tab) => (
+                {['dashboard', 'calling', 'companies', 'discover', 'activities', 'employees', ...(user?.role === 'admin' ? ['admin'] : [])].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -475,7 +478,7 @@
                       activeTab === tab ? 'tab-active' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
                     }`}
                   >
-                    {tab === 'calling' ? '📞 Calling' : tab === 'admin' ? '⚙️ Admin' : tab}
+                    {tab === 'calling' ? '📞 Calling' : tab === 'discover' ? '🔍 Discover' : tab === 'admin' ? '⚙️ Admin' : tab}
                   </button>
                 ))}
               </div>
@@ -538,6 +541,13 @@
                   <Employees
                     employees={employees}
                     onRefresh={refreshEmployees}
+                  />
+                )}
+                {activeTab === 'discover' && (
+                  <Discover
+                    companies={companies}
+                    onRefresh={refreshCompanies}
+                    onViewCompany={setViewingCompanyId}
                   />
                 )}
                 {activeTab === 'admin' && user?.role === 'admin' && (
@@ -3190,6 +3200,223 @@
               onClose={() => setShowActivityModal(false)}
               onSave={async () => { setShowActivityModal(false); await onRefresh(); }}
             />
+          )}
+        </div>
+      );
+    }
+
+    // Discover Component - Find new companies via Google Places
+    function Discover({ companies, onRefresh, onViewCompany }) {
+      const [industry, setIndustry] = useState('Fencing');
+      const [location, setLocation] = useState('');
+      const [results, setResults] = useState([]);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+      const [addingId, setAddingId] = useState(null);
+      const [addedIds, setAddedIds] = useState(new Set());
+
+      const industries = [
+        'Fencing',
+        'Landscaping',
+        'Hardscaping',
+        'Construction',
+        'Handyman',
+        'Deck Building',
+        'Paving',
+        'Excavation',
+        'Concrete',
+        'Roofing'
+      ];
+
+      const handleSearch = async () => {
+        if (!location.trim()) {
+          setError('Please enter a location (city, state, or zip code)');
+          return;
+        }
+        setLoading(true);
+        setError('');
+        setResults([]);
+        setAddedIds(new Set());
+        try {
+          const query = `${industry} companies`;
+          const data = await api.discoverCompanies(query, location.trim());
+          setResults(data);
+          if (data.length === 0) {
+            setError('No results found. Try a different location or industry.');
+          }
+        } catch (err) {
+          setError(err.message || 'Search failed. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleAddToCRM = async (place) => {
+        setAddingId(place.google_place_id);
+        try {
+          await api.createCompany({
+            name: place.name,
+            phone: place.phone,
+            address: place.street,
+            city: place.city,
+            state: place.state,
+            zip: place.zip,
+            website: place.website,
+            type: 'Prospect',
+            notes: JSON.stringify([{
+              id: Date.now().toString(),
+              author: 'System',
+              text: `Imported from Google Places. Rating: ${place.rating || 'N/A'} (${place.ratingCount} reviews). Full address: ${place.address}`,
+              timestamp: new Date().toISOString()
+            }]),
+            tags: JSON.stringify([industry])
+          });
+          setAddedIds(prev => new Set([...prev, place.google_place_id]));
+          await onRefresh();
+        } catch (err) {
+          alert('Failed to add company: ' + (err.message || 'Unknown error'));
+        } finally {
+          setAddingId(null);
+        }
+      };
+
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Discover Companies</h2>
+          </div>
+
+          {/* Search Form */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Industry</label>
+                <select
+                  value={industry}
+                  onChange={(e) => setIndustry(e.target.value)}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {industries.map(ind => (
+                    <option key={ind} value={ind}>{ind}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location</label>
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  placeholder="City, State or Zip Code (e.g. Wilmington, DE)"
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={handleSearch}
+                  disabled={loading}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {loading ? <><Spinner size="sm" /> Searching...</> : '🔍 Search'}
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Search for {industry.toLowerCase()} companies near a specific location. Results are powered by Google Places.
+            </p>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6 text-red-700 dark:text-red-300">
+              {error}
+            </div>
+          )}
+
+          {/* Results */}
+          {results.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                  Found {results.length} {industry} companies near {location}
+                </h3>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {results.filter(r => r.alreadyInCRM || addedIds.has(r.google_place_id)).length} already in CRM
+                </span>
+              </div>
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                {results.map((place) => {
+                  const inCRM = place.alreadyInCRM || addedIds.has(place.google_place_id);
+                  return (
+                    <div key={place.google_place_id} className="px-6 py-4 flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-semibold text-gray-900 dark:text-gray-100">{place.name}</h4>
+                          {place.rating && (
+                            <span className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                              ⭐ {place.rating}
+                              <span className="text-gray-500 dark:text-gray-400">({place.ratingCount})</span>
+                            </span>
+                          )}
+                          {inCRM && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">
+                              In CRM
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{place.address}</p>
+                        <div className="flex items-center gap-4 mt-2 flex-wrap">
+                          {place.phone && (
+                            <a href={`tel:${place.phone}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                              📞 {place.phone}
+                            </a>
+                          )}
+                          {place.website && (
+                            <a href={place.website} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 hover:underline truncate max-w-xs">
+                              🌐 {place.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        {inCRM ? (
+                          <button
+                            disabled
+                            className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                          >
+                            Added ✓
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleAddToCRM(place)}
+                            disabled={addingId === place.google_place_id}
+                            className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white transition-colors flex items-center gap-2"
+                          >
+                            {addingId === place.google_place_id ? (
+                              <><Spinner size="sm" /> Adding...</>
+                            ) : (
+                              '+ Add to CRM'
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loading && results.length === 0 && !error && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+              <div className="text-4xl mb-4">🔍</div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Find New Companies</h3>
+              <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+                Search for fencing, landscaping, hardscaping, construction, and other companies in any area to add to your CRM.
+              </p>
+            </div>
           )}
         </div>
       );

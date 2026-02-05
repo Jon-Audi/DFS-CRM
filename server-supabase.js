@@ -1007,6 +1007,86 @@ app.get('/stats', authenticateToken, async (req, res) => {
 });
 
 // ============================================
+// DISCOVER ROUTE (Google Places API)
+// ============================================
+
+app.get('/discover', authenticateToken, async (req, res) => {
+  try {
+    const { query, location } = req.query;
+    if (!query) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Google Places API key not configured' });
+    }
+
+    const textQuery = location ? `${query} in ${location}` : query;
+
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.addressComponents'
+      },
+      body: JSON.stringify({
+        textQuery,
+        maxResultCount: 20
+      })
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      console.error('Google Places API error:', errData);
+      throw new Error(errData.error?.message || `Google API returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    const places = (data.places || []).map(place => {
+      // Extract address components
+      const components = place.addressComponents || [];
+      const getComponent = (type) => {
+        const comp = components.find(c => c.types?.includes(type));
+        return comp ? (comp.shortText || comp.longText || '') : '';
+      };
+
+      return {
+        google_place_id: place.id,
+        name: place.displayName?.text || '',
+        address: place.formattedAddress || '',
+        street: getComponent('street_number') + (getComponent('street_number') ? ' ' : '') + getComponent('route'),
+        city: getComponent('locality') || getComponent('sublocality'),
+        state: getComponent('administrative_area_level_1'),
+        zip: getComponent('postal_code'),
+        phone: place.nationalPhoneNumber || place.internationalPhoneNumber || '',
+        website: place.websiteUri || '',
+        rating: place.rating || null,
+        ratingCount: place.userRatingCount || 0
+      };
+    });
+
+    // Check which ones already exist in CRM (by name match)
+    const { data: existingCompanies } = await supabase
+      .from('companies')
+      .select('name');
+
+    const existingNames = new Set((existingCompanies || []).map(c => c.name.toLowerCase().trim()));
+
+    const results = places.map(p => ({
+      ...p,
+      alreadyInCRM: existingNames.has(p.name.toLowerCase().trim())
+    }));
+
+    res.json(results);
+  } catch (err) {
+    console.error('Error in discover:', err);
+    res.status(500).json({ error: err.message || 'Failed to search for companies' });
+  }
+});
+
+// ============================================
 // SPA FALLBACK ROUTE
 // ============================================
 // Serve index.html for all other routes (SPA routing)

@@ -67,6 +67,10 @@
       "dest": "/server-supabase.js"
     },
     {
+      "src": "/discover(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "/public/index.html"
     }
