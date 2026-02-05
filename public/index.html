@@ -2030,6 +2030,10 @@
       const [search, setSearch] = useState('');
       const [typeFilter, setTypeFilter] = useState('all');
       const [tagFilter, setTagFilter] = useState('all');
+      const [followUpFilter, setFollowUpFilter] = useState('all');
+      const [customerFilter, setCustomerFilter] = useState('all');
+      const [sortBy, setSortBy] = useState('name');
+      const [sortDir, setSortDir] = useState('asc');
       const [selectedCompany, setSelectedCompany] = useState(null);
       const [showActivityModal, setShowActivityModal] = useState(false);
       const [showEditModal, setShowEditModal] = useState(false);
@@ -2043,8 +2047,13 @@
       }, [companies]);
 
       const filtered = companies.filter(company => {
-        const matchesSearch = company.name.toLowerCase().includes(search.toLowerCase()) ||
-                            (company.city || '').toLowerCase().includes(search.toLowerCase());
+        const s = search.toLowerCase();
+        const matchesSearch = !s ||
+          company.name.toLowerCase().includes(s) ||
+          (company.city || '').toLowerCase().includes(s) ||
+          (company.contact_name || '').toLowerCase().includes(s) ||
+          (company.phone || '').replace(/\D/g, '').includes(s.replace(/\D/g, '')) ||
+          (company.email || '').toLowerCase().includes(s);
         const matchesType = typeFilter === 'all' || company.type === typeFilter;
         let matchesTag = true;
         if (tagFilter !== 'all') {
@@ -2053,14 +2062,52 @@
             matchesTag = companyTags.includes(tagFilter);
           } catch (e) { matchesTag = false; }
         }
-        return matchesSearch && matchesType && matchesTag;
+        // Follow-up filter
+        let matchesFollowUp = true;
+        if (followUpFilter !== 'all') {
+          const now = new Date();
+          const fuDate = company.follow_up_date ? new Date(company.follow_up_date) : null;
+          if (followUpFilter === 'overdue') matchesFollowUp = fuDate && fuDate < now;
+          else if (followUpFilter === 'upcoming') matchesFollowUp = fuDate && fuDate >= now;
+          else if (followUpFilter === 'none') matchesFollowUp = !fuDate;
+        }
+        // Customer filter
+        let matchesCustomer = true;
+        if (customerFilter !== 'all') {
+          if (customerFilter === 'customer') matchesCustomer = company.is_customer === true;
+          else if (customerFilter === 'prospect') matchesCustomer = company.is_customer !== true;
+        }
+        return matchesSearch && matchesType && matchesTag && matchesFollowUp && matchesCustomer;
       });
 
-      const totalPages = Math.ceil(filtered.length / perPage);
-      const paginatedCompanies = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+      // Sort filtered results
+      const sorted = [...filtered].sort((a, b) => {
+        let aVal, bVal;
+        if (sortBy === 'name') {
+          aVal = (a.name || '').toLowerCase();
+          bVal = (b.name || '').toLowerCase();
+        } else if (sortBy === 'last_activity') {
+          const aActs = activities.filter(act => act.company_id === a.id);
+          const bActs = activities.filter(act => act.company_id === b.id);
+          aVal = aActs.length ? new Date(Math.max(...aActs.map(act => new Date(act.created_at)))).getTime() : 0;
+          bVal = bActs.length ? new Date(Math.max(...bActs.map(act => new Date(act.created_at)))).getTime() : 0;
+        } else if (sortBy === 'last_order') {
+          aVal = a.last_order_date ? new Date(a.last_order_date).getTime() : 0;
+          bVal = b.last_order_date ? new Date(b.last_order_date).getTime() : 0;
+        } else if (sortBy === 'follow_up') {
+          aVal = a.follow_up_date ? new Date(a.follow_up_date).getTime() : Infinity;
+          bVal = b.follow_up_date ? new Date(b.follow_up_date).getTime() : Infinity;
+        }
+        if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+
+      const totalPages = Math.ceil(sorted.length / perPage);
+      const paginatedCompanies = sorted.slice((currentPage - 1) * perPage, currentPage * perPage);
 
       // Reset to page 1 when filters change
-      useEffect(() => { setCurrentPage(1); }, [search, typeFilter, tagFilter]);
+      useEffect(() => { setCurrentPage(1); }, [search, typeFilter, tagFilter, followUpFilter, customerFilter, sortBy, sortDir]);
 
       const types = [...new Set(companies.map(c => c.type))].filter(Boolean);
 
@@ -2097,7 +2144,7 @@
       return (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">Companies ({filtered.length})</h2>
+            <h2 className="text-2xl font-bold">Companies ({sorted.length})</h2>
             <button
               onClick={handleCreateCompany}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
@@ -2106,13 +2153,13 @@
             </button>
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
             <input
               type="text"
-              placeholder="Search companies..."
+              placeholder="Search name, contact, phone, email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              className="flex-1 min-w-[200px] px-4 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             />
             <select
               value={typeFilter}
@@ -2136,18 +2183,53 @@
                 ))}
               </select>
             )}
+            <select
+              value={followUpFilter}
+              onChange={(e) => setFollowUpFilter(e.target.value)}
+              className="px-4 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            >
+              <option value="all">All Follow-ups</option>
+              <option value="overdue">Overdue</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="none">No Follow-up</option>
+            </select>
+            <select
+              value={customerFilter}
+              onChange={(e) => setCustomerFilter(e.target.value)}
+              className="px-4 py-2 border dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            >
+              <option value="all">All Companies</option>
+              <option value="customer">Customers Only</option>
+              <option value="prospect">Prospects Only</option>
+            </select>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Company</th>
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    onClick={() => { if (sortBy === 'name') setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); else { setSortBy('name'); setSortDir('asc'); } }}
+                  >
+                    Company {sortBy === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Type</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Location</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Contact</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Customer</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    onClick={() => { if (sortBy === 'last_activity') setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); else { setSortBy('last_activity'); setSortDir('desc'); } }}
+                  >
+                    Status {sortBy === 'last_activity' && (sortDir === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    onClick={() => { if (sortBy === 'last_order') setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); else { setSortBy('last_order'); setSortDir('desc'); } }}
+                  >
+                    Last Order {sortBy === 'last_order' && (sortDir === 'asc' ? '↑' : '↓')}
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
                 </tr>
               </thead>
@@ -2210,6 +2292,13 @@
                           {needsFollowup && <span className="px-2 py-1 text-xs font-medium bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded text-center">Follow-up</span>}
                           {companyActivities.length === 0 && <span className="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 rounded text-center">Not Contacted</span>}
                         </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                        {company.last_order_date ? (
+                          <span>{new Date(company.last_order_date).toLocaleDateString()}</span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500 italic">-</span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
