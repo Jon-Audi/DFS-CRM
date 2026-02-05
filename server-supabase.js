@@ -1119,6 +1119,7 @@ app.post('/email/send', authenticateToken, async (req, res) => {
       body: JSON.stringify({
         from: fromEmail,
         to: [to],
+        reply_to: ['info@delawarefencesolutions.com'],
         subject,
         html: body
       })
