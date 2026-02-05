@@ -1087,6 +1087,207 @@ app.get('/discover', authenticateToken, async (req, res) => {
 });
 
 // ============================================
+// EMAIL ROUTE (Resend API)
+// ============================================
+
+app.post('/email/send', authenticateToken, async (req, res) => {
+  try {
+    const { to, subject, body, company_id } = req.body;
+
+    if (!to || !subject || !body) {
+      return res.status(400).json({ error: 'To, subject, and body are required' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(to)) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (!resendApiKey) {
+      return res.status(500).json({ error: 'Email service not configured. Add RESEND_API_KEY to environment variables.' });
+    }
+
+    const fromEmail = process.env.EMAIL_FROM || 'Delaware Fence Solutions <onboarding@resend.dev>';
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${resendApiKey}`
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [to],
+        subject,
+        html: body
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error('Resend API error:', result);
+      throw new Error(result.message || `Email service returned ${response.status}`);
+    }
+
+    // Log email as activity if company_id provided
+    if (company_id) {
+      // Find employee matching user
+      const { data: employees } = await supabase
+        .from('employees')
+        .select('id, name')
+        .eq('name', req.user.name)
+        .eq('active', true)
+        .limit(1);
+
+      const employeeId = employees?.[0]?.id || null;
+
+      if (employeeId) {
+        await supabase.from('activities').insert([{
+          id: `activity_${Date.now()}`,
+          company_id,
+          employee_id: employeeId,
+          type: 'email',
+          answered: 0,
+          interested: 0,
+          follow_up: 0,
+          notes: `Email sent: "${subject}" to ${to}`,
+          date: new Date().toISOString().split('T')[0]
+        }]);
+      }
+
+      // Also add a note to the company
+      const { data: company } = await supabase
+        .from('companies')
+        .select('notes')
+        .eq('id', company_id)
+        .single();
+
+      if (company) {
+        let notesArr = [];
+        const raw = company.notes || '';
+        if (raw.trim().startsWith('[')) {
+          try { notesArr = JSON.parse(raw); } catch (e) { notesArr = []; }
+        } else if (raw.trim()) {
+          notesArr = [{ id: 'legacy_1', author: 'System', text: raw, timestamp: new Date().toISOString() }];
+        }
+        notesArr.unshift({
+          id: `note_${Date.now()}`,
+          author: req.user.name || req.user.username,
+          text: `Sent email: "${subject}" to ${to}`,
+          timestamp: new Date().toISOString()
+        });
+        await supabase
+          .from('companies')
+          .update({ notes: JSON.stringify(notesArr), updated_at: new Date().toISOString() })
+          .eq('id', company_id);
+      }
+    }
+
+    res.json({ message: 'Email sent successfully', id: result.id });
+  } catch (err) {
+    console.error('Error sending email:', err);
+    res.status(500).json({ error: err.message || 'Failed to send email' });
+  }
+});
+
+// Get email templates
+app.get('/email/templates', authenticateToken, async (req, res) => {
+  const templates = [
+    {
+      id: 'intro',
+      name: 'Introduction Email',
+      subject: 'Introduction - Delaware Fence Solutions',
+      body: `<p>Hello {{contact_name}},</p>
+
+<p>My name is {{sender_name}}, and I'm reaching out from <strong>Delaware Fence Solutions</strong>, a locally, family-owned Wholesale/Retail Fence Supplier based in Wilmington, Delaware. We specialize exclusively in supplying high-quality fencing materials to contractors, builders, and property managers.</p>
+
+<p>I wanted to introduce ourselves and share how we can support your projects with reliable materials and competitive pricing.</p>
+
+<p><strong>Materials We Stock</strong></p>
+<ul>
+  <li><strong>Vinyl Fencing</strong> - Low maintenance, multiple styles, 20+ year manufacturer warranties</li>
+  <li><strong>Wood Fencing</strong> - Cedar and pine options, panels and components</li>
+  <li><strong>Chain Link</strong> - Commercial-grade galvanized materials</li>
+  <li><strong>Aluminum Fencing</strong> - Decorative and pool-code compliant systems</li>
+  <li><strong>Gates, posts, hardware, and repair materials</strong></li>
+</ul>
+
+<p><strong>Why Contractors Work with Us</strong></p>
+<ul>
+  <li>Competitive contractor pricing</li>
+  <li>Local inventory with fast availability</li>
+  <li>No installation services — we do not compete with our customers</li>
+  <li>Knowledgeable support to help you order the right materials the first time</li>
+</ul>
+
+<p>If you're currently sourcing fencing materials or looking for an additional local supplier, we'd be happy to earn your business.</p>
+
+<p>Feel free to reply directly to this email or call us at <strong>302-610-8901</strong>. We look forward to hearing from you.</p>
+
+<p>Best regards,<br/>
+{{sender_name}}<br/>
+<strong>Delaware Fence Solutions</strong><br/>
+1111 Greenbank Road, Wilmington, DE 19808<br/>
+302-610-8901<br/>
+Info@DelawareFenceSolutions.com<br/>
+www.delawarefencesolutions.com</p>`
+    },
+    {
+      id: 'follow_up',
+      name: 'Follow-Up Email',
+      subject: 'Following Up - Delaware Fence Solutions',
+      body: `<p>Hello {{contact_name}},</p>
+
+<p>I wanted to follow up on my previous message. I hope you had a chance to review the information about Delaware Fence Solutions.</p>
+
+<p>As a quick reminder, we're a local wholesale/retail fence supplier in Wilmington, DE. We stock vinyl, wood, chain link, aluminum, and all the hardware and accessories you need — at competitive contractor pricing.</p>
+
+<p>If you have any upcoming projects or need a quote on materials, we'd love to help. No pressure at all — just want to make sure you know we're here as a resource.</p>
+
+<p>Feel free to reach out anytime at <strong>302-610-8901</strong> or reply to this email.</p>
+
+<p>Best regards,<br/>
+{{sender_name}}<br/>
+<strong>Delaware Fence Solutions</strong><br/>
+1111 Greenbank Road, Wilmington, DE 19808<br/>
+302-610-8901<br/>
+Info@DelawareFenceSolutions.com<br/>
+www.delawarefencesolutions.com</p>`
+    },
+    {
+      id: 'pricing',
+      name: 'Pricing Request',
+      subject: 'Pricing Information - Delaware Fence Solutions',
+      body: `<p>Hello {{contact_name}},</p>
+
+<p>Thank you for your interest in Delaware Fence Solutions! I'm happy to provide pricing on the materials you need.</p>
+
+<p>To get you an accurate quote, could you let me know:</p>
+<ul>
+  <li>What type of fencing material are you looking for? (vinyl, wood, chain link, aluminum)</li>
+  <li>Approximate quantity or linear footage needed?</li>
+  <li>Any specific style or height requirements?</li>
+  <li>When do you need the materials?</li>
+</ul>
+
+<p>Once I have these details, I'll put together a competitive quote for you right away.</p>
+
+<p>Best regards,<br/>
+{{sender_name}}<br/>
+<strong>Delaware Fence Solutions</strong><br/>
+1111 Greenbank Road, Wilmington, DE 19808<br/>
+302-610-8901<br/>
+Info@DelawareFenceSolutions.com<br/>
+www.delawarefencesolutions.com</p>`
+    }
+  ];
+
+  res.json(templates);
+});
+
+// ============================================
 // SPA FALLBACK ROUTE
 // ============================================
 // Serve index.html for all other routes (SPA routing)

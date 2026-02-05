@@ -71,6 +71,10 @@
       "dest": "/server-supabase.js"
     },
     {
+      "src": "/email/(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "/public/index.html"
     }
