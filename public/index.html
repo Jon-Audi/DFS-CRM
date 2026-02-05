@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Delaware Fence Solutions - CRM</title>
+  <script>
+    // Prevent dark mode flash - runs synchronously before any CSS loads
+    (function() {
+      var dm = localStorage.getItem('darkMode');
+      if (dm === null || dm === 'true') document.documentElement.classList.add('dark');
+    })();
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -131,6 +138,64 @@
       getStats: () => api.request('/stats')
     };
 
+    // Reusable Spinner component
+    function Spinner({ size = 'md' }) {
+      const sizes = { sm: 'h-4 w-4', md: 'h-6 w-6', lg: 'h-8 w-8' };
+      return (
+        <svg className={`animate-spin ${sizes[size]} text-current`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      );
+    }
+
+    // Pagination component
+    function Pagination({ currentPage, totalPages, onPageChange }) {
+      if (totalPages <= 1) return null;
+
+      const getPages = () => {
+        const pages = [];
+        const maxVisible = 5;
+        let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+        let end = Math.min(totalPages, start + maxVisible - 1);
+        if (end - start + 1 < maxVisible) start = Math.max(1, end - maxVisible + 1);
+        for (let i = start; i <= end; i++) pages.push(i);
+        return pages;
+      };
+
+      return (
+        <div className="flex items-center justify-center gap-1 mt-4">
+          <button
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="px-3 py-1 rounded text-sm border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Prev
+          </button>
+          {getPages().map(page => (
+            <button
+              key={page}
+              onClick={() => onPageChange(page)}
+              className={`px-3 py-1 rounded text-sm ${
+                page === currentPage
+                  ? 'bg-blue-600 text-white'
+                  : 'border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              {page}
+            </button>
+          ))}
+          <button
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 rounded text-sm border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      );
+    }
+
     function App() {
       const [isAuthenticated, setIsAuthenticated] = useState(false);
       const [user, setUser] = useState(null);
@@ -182,7 +247,7 @@
       if (loading) {
         return (
           <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-            <div className="text-xl text-gray-900 dark:text-gray-100">Loading...</div>
+            <div className="text-blue-600 dark:text-blue-400"><Spinner size="lg" /></div>
           </div>
         );
       }
@@ -270,15 +335,14 @@
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300"
+                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 flex items-center justify-center gap-2"
               >
-                {loading ? 'Logging in...' : 'Login'}
+                {loading ? <><Spinner size="sm" /> Logging in...</> : 'Login'}
               </button>
             </form>
 
             <div className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-              <p>Default credentials:</p>
-              <p className="font-mono">Username: admin / Password: admin123</p>
+              <p>Contact your administrator for login credentials.</p>
             </div>
           </div>
         </div>
@@ -333,8 +397,9 @@
 
       if (loading) {
         return (
-          <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-            <div className="text-xl text-gray-900 dark:text-gray-100">Loading CRM...</div>
+          <div className="flex flex-col items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 gap-3">
+            <div className="text-blue-600 dark:text-blue-400"><Spinner size="lg" /></div>
+            <div className="text-gray-600 dark:text-gray-400">Loading CRM...</div>
           </div>
         );
       }
@@ -393,18 +458,20 @@
               />
             )}
             {activeTab === 'calling' && (
-              <Calling 
+              <Calling
                 companies={companies}
                 employees={employees}
+                user={user}
                 onActivityAdded={refreshActivities}
                 onCompanyUpdated={refreshCompanies}
               />
             )}
             {activeTab === 'companies' && (
-              <Companies 
+              <Companies
                 companies={companies}
                 activities={activities}
                 employees={employees}
+                user={user}
                 onRefresh={refreshCompanies}
                 onActivityAdded={refreshActivities}
               />
@@ -567,7 +634,7 @@
           {/* User Management Section */}
           {activeSection === 'users' && (
             loading ? (
-              <p className="text-center text-gray-600">Loading users...</p>
+              <div className="flex items-center justify-center gap-2 text-gray-600 dark:text-gray-400 py-8"><Spinner /> Loading users...</div>
             ) : (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
                 <table className="w-full">
@@ -1009,9 +1076,9 @@
     }
 
     // Calling Component
-    function Calling({ companies, employees, onActivityAdded, onCompanyUpdated }) {
+    function Calling({ companies, employees, user, onActivityAdded, onCompanyUpdated }) {
       const [currentIndex, setCurrentIndex] = useState(0);
-      const [employee, setEmployee] = useState(employees.find(e => e.active)?.id || '');
+      const [employee, setEmployee] = useState(user?.employeeId || employees.find(e => e.active)?.id || '');
       const [showScript, setShowScript] = useState(false);
       const [script, setScript] = useState(null);
       const [loadingScript, setLoadingScript] = useState(false);
@@ -1495,9 +1562,9 @@
             <button
               onClick={handleSaveAndNext}
               disabled={saving}
-              className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-300 font-semibold"
+              className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-300 font-semibold flex items-center justify-center gap-2"
             >
-              {saving ? 'Saving...' : 'Save & Next →'}
+              {saving ? <><Spinner size="sm" /> Saving...</> : 'Save & Next →'}
             </button>
           </div>
         </div>
@@ -1512,7 +1579,7 @@
         api.getStats().then(setStats);
       }, [activities]);
 
-      if (!stats) return <div>Loading statistics...</div>;
+      if (!stats) return <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400"><Spinner size="sm" /> Loading statistics...</div>;
 
       const recentActivities = [...activities].slice(0, 5);
 
@@ -1581,7 +1648,7 @@
     }
 
     // Companies Component
-    function Companies({ companies, activities, employees, onRefresh, onActivityAdded }) {
+    function Companies({ companies, activities, employees, user, onRefresh, onActivityAdded }) {
       const [search, setSearch] = useState('');
       const [typeFilter, setTypeFilter] = useState('all');
       const [selectedCompany, setSelectedCompany] = useState(null);
@@ -1590,6 +1657,8 @@
       const [showDetailModal, setShowDetailModal] = useState(false);
       const [editingCompany, setEditingCompany] = useState(null);
       const [viewingCompany, setViewingCompany] = useState(null);
+      const [currentPage, setCurrentPage] = useState(1);
+      const perPage = 25;
 
       const filtered = companies.filter(company => {
         const matchesSearch = company.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -1597,6 +1666,12 @@
         const matchesType = typeFilter === 'all' || company.type === typeFilter;
         return matchesSearch && matchesType;
       });
+
+      const totalPages = Math.ceil(filtered.length / perPage);
+      const paginatedCompanies = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+      // Reset to page 1 when filters change
+      useEffect(() => { setCurrentPage(1); }, [search, typeFilter]);
 
       const types = [...new Set(companies.map(c => c.type))].filter(Boolean);
 
@@ -1683,7 +1758,7 @@
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {filtered.map((company) => {
+                {paginatedCompanies.map((company) => {
                   const companyActivities = activities.filter(a => a.company_id === company.id);
                   const interested = companyActivities.some(a => a.interested);
                   const needsFollowup = companyActivities.some(a => a.follow_up);
@@ -1763,10 +1838,13 @@
             </table>
           </div>
 
+          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+
           {showActivityModal && selectedCompany && (
             <ActivityModal
               company={selectedCompany}
               employees={employees}
+              user={user}
               onClose={() => {
                 setShowActivityModal(false);
                 setSelectedCompany(null);
@@ -1813,6 +1891,8 @@
     // Activities Component
     function Activities({ activities, companies, employees, onRefresh }) {
       const [filter, setFilter] = useState('all');
+      const [currentPage, setCurrentPage] = useState(1);
+      const perPage = 20;
 
       const filtered = activities.filter(activity => {
         if (filter === 'all') return true;
@@ -1822,6 +1902,12 @@
         if (filter === 'followup') return activity.follow_up;
         return true;
       });
+
+      const totalPages = Math.ceil(filtered.length / perPage);
+      const paginatedActivities = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+      // Reset to page 1 when filter changes
+      useEffect(() => { setCurrentPage(1); }, [filter]);
 
       const deleteActivity = async (id) => {
         if (confirm('Delete this activity?')) {
@@ -1875,7 +1961,7 @@
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filtered.map((activity) => {
+                  {paginatedActivities.map((activity) => {
                     const company = companies.find(c => c.id === activity.company_id);
                     const employee = employees.find(e => e.id === activity.employee_id);
                     
@@ -1912,6 +1998,8 @@
               </table>
             )}
           </div>
+
+          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
         </div>
       );
     }
@@ -2022,10 +2110,10 @@
     }
 
     // Activity Modal
-    function ActivityModal({ company, employees, onClose, onSave }) {
+    function ActivityModal({ company, employees, user, onClose, onSave }) {
       const [activity, setActivity] = useState({
         type: 'call',
-        employee_id: employees.find(e => e.active)?.id || '',
+        employee_id: user?.employeeId || employees.find(e => e.active)?.id || '',
         answered: false,
         interested: false,
         follow_up: false,
@@ -2139,9 +2227,9 @@
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
               >
-                {saving ? 'Saving...' : 'Save Activity'}
+                {saving ? <><Spinner size="sm" /> Saving...</> : 'Save Activity'}
               </button>
             </div>
           </div>
@@ -2359,9 +2447,9 @@
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
               >
-                {saving ? 'Saving...' : (isEdit ? 'Update Company' : 'Add Company')}
+                {saving ? <><Spinner size="sm" /> Saving...</> : (isEdit ? 'Update Company' : 'Add Company')}
               </button>
             </div>
           </div>
@@ -2485,9 +2573,9 @@
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 flex items-center justify-center gap-2"
               >
-                {saving ? 'Saving...' : (isEdit ? 'Update Employee' : 'Add Employee')}
+                {saving ? <><Spinner size="sm" /> Saving...</> : (isEdit ? 'Update Employee' : 'Add Employee')}
               </button>
             </div>
           </div>
