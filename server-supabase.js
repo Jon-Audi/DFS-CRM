@@ -1137,6 +1137,59 @@ app.get('/integrations/match/:companyId', authenticateToken, async (req, res) =>
       .single();
     if (compErr) throw compErr;
 
+    // If already linked, use the saved customer ID directly
+    if (company.invoice_customer_id) {
+      const custDoc = await firestore.collection('customers').doc(company.invoice_customer_id).get();
+      if (custDoc.exists) {
+        const custData = custDoc.data();
+        const customerId = company.invoice_customer_id;
+
+        const [estSnap, invSnap] = await Promise.all([
+          firestore.collection('estimates').where('customerId', '==', customerId).get(),
+          firestore.collection('invoices').where('customerId', '==', customerId).get()
+        ]);
+
+        const estimates = [];
+        estSnap.forEach(doc => {
+          const d = doc.data();
+          estimates.push({ id: doc.id, estimateNumber: d.estimateNumber, date: d.date, status: d.status, total: d.total });
+        });
+        const invoices = [];
+        invSnap.forEach(doc => {
+          const d = doc.data();
+          invoices.push({ id: doc.id, invoiceNumber: d.invoiceNumber, date: d.date, dueDate: d.dueDate, status: d.status, total: d.total, amountPaid: d.amountPaid, balanceDue: d.balanceDue });
+        });
+
+        estimates.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        invoices.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+        const totalEstimates = estimates.reduce((sum, e) => sum + (e.total || 0), 0);
+        const totalInvoiced = invoices.reduce((sum, i) => sum + (i.total || 0), 0);
+        const totalPaid = invoices.reduce((sum, i) => sum + (i.amountPaid || 0), 0);
+        const totalOutstanding = invoices.reduce((sum, i) => sum + (i.balanceDue || 0), 0);
+
+        return res.json({
+          matched: true,
+          matchScore: 100,
+          linked: true,
+          customer: {
+            id: customerId,
+            name: [custData.firstName, custData.lastName].filter(Boolean).join(' '),
+            companyName: custData.companyName,
+            customerType: custData.customerType
+          },
+          estimates,
+          invoices,
+          summary: {
+            totalEstimates, totalInvoiced, totalPaid, totalOutstanding,
+            estimateCount: estimates.length, invoiceCount: invoices.length,
+            latestEstimateDate: estimates[0]?.date || null,
+            latestInvoiceDate: invoices[0]?.date || null
+          }
+        });
+      }
+    }
+
     // Search invoice app customers for a match
     const snapshot = await firestore.collection('customers').get();
     let match = null;
@@ -1251,6 +1304,139 @@ app.post('/integrations/sync/:companyId', authenticateToken, async (req, res) =>
   } catch (err) {
     console.error('Error syncing dates:', err);
     res.status(500).json({ error: err.message || 'Failed to sync dates' });
+  }
+});
+
+// Bulk match all invoice customers to CRM companies
+app.get('/integrations/bulk-match', authenticateToken, async (req, res) => {
+  try {
+    if (!firestore) return res.status(503).json({ error: 'Invoice integration not configured' });
+
+    // Get all CRM companies
+    const { data: companies, error: compErr } = await supabase
+      .from('companies')
+      .select('id, name, contact_name, phone, invoice_customer_id');
+    if (compErr) throw compErr;
+
+    // Get all invoice app customers
+    const snapshot = await firestore.collection('customers').get();
+    const invoiceCustomers = [];
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      invoiceCustomers.push({
+        id: doc.id,
+        firstName: d.firstName,
+        lastName: d.lastName,
+        companyName: d.companyName || '',
+        phone: d.phone || '',
+        customerType: d.customerType,
+        name: [d.firstName, d.lastName].filter(Boolean).join(' ')
+      });
+    });
+
+    // Build results: for each invoice customer, find best CRM match
+    const results = invoiceCustomers.map(ic => {
+      // Check if already linked
+      const linkedCompany = companies.find(c => c.invoice_customer_id === ic.id);
+      if (linkedCompany) {
+        return {
+          invoiceCustomer: ic,
+          match: { id: linkedCompany.id, name: linkedCompany.name },
+          score: 100,
+          status: 'linked'
+        };
+      }
+
+      // Try to auto-match
+      let bestMatch = null;
+      let bestScore = 0;
+
+      companies.forEach(c => {
+        // Skip already linked companies
+        if (c.invoice_customer_id) return;
+
+        const crmName = (c.name || '').toLowerCase().trim();
+        const crmContact = (c.contact_name || '').toLowerCase().trim();
+        const icCompany = (ic.companyName || '').toLowerCase().trim();
+        const icName = (ic.name || '').toLowerCase().trim();
+
+        let score = 0;
+
+        // Exact company name match
+        if (icCompany && crmName && icCompany === crmName) score = 100;
+        // Company name contains or is contained
+        else if (icCompany && crmName && (icCompany.includes(crmName) || crmName.includes(icCompany))) score = 80;
+        // Contact name matches invoice customer name
+        else if (icName && crmContact && icName === crmContact) score = 70;
+        // Contact name matches company name (for sole proprietors)
+        else if (icName && crmName && icName === crmName) score = 75;
+        // Phone match
+        if (ic.phone && c.phone) {
+          const p1 = ic.phone.replace(/\D/g, '').slice(-10);
+          const p2 = c.phone.replace(/\D/g, '').slice(-10);
+          if (p1 && p2 && p1 === p2) score = Math.max(score, 90);
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = { id: c.id, name: c.name };
+        }
+      });
+
+      return {
+        invoiceCustomer: ic,
+        match: bestMatch,
+        score: bestScore,
+        status: bestScore >= 70 ? 'suggested' : 'unmatched'
+      };
+    });
+
+    // Sort: suggested first, then unmatched, then linked
+    const order = { suggested: 0, unmatched: 1, linked: 2 };
+    results.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || b.score - a.score);
+
+    res.json({ results, crmCompanies: companies.map(c => ({ id: c.id, name: c.name, invoice_customer_id: c.invoice_customer_id })) });
+  } catch (err) {
+    console.error('Error bulk matching:', err);
+    res.status(500).json({ error: err.message || 'Failed to bulk match' });
+  }
+});
+
+// Link an invoice customer to a CRM company
+app.post('/integrations/link', authenticateToken, async (req, res) => {
+  try {
+    const { companyId, invoiceCustomerId } = req.body;
+    if (!companyId || !invoiceCustomerId) return res.status(400).json({ error: 'companyId and invoiceCustomerId required' });
+
+    const { error } = await supabase
+      .from('companies')
+      .update({ invoice_customer_id: invoiceCustomerId, updated_at: new Date().toISOString() })
+      .eq('id', companyId);
+    if (error) throw error;
+
+    res.json({ message: 'Linked successfully' });
+  } catch (err) {
+    console.error('Error linking:', err);
+    res.status(500).json({ error: err.message || 'Failed to link' });
+  }
+});
+
+// Unlink an invoice customer from a CRM company
+app.post('/integrations/unlink', authenticateToken, async (req, res) => {
+  try {
+    const { companyId } = req.body;
+    if (!companyId) return res.status(400).json({ error: 'companyId required' });
+
+    const { error } = await supabase
+      .from('companies')
+      .update({ invoice_customer_id: null, updated_at: new Date().toISOString() })
+      .eq('id', companyId);
+    if (error) throw error;
+
+    res.json({ message: 'Unlinked successfully' });
+  } catch (err) {
+    console.error('Error unlinking:', err);
+    res.status(500).json({ error: err.message || 'Failed to unlink' });
   }
 });
 

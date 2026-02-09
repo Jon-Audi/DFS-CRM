@@ -217,7 +217,10 @@
 
       // Invoice App Integration
       getInvoiceMatch: (companyId) => api.request(`/integrations/match/${companyId}`),
-      syncInvoiceDates: (companyId, dates) => api.request(`/integrations/sync/${companyId}`, { method: 'POST', body: JSON.stringify(dates) })
+      syncInvoiceDates: (companyId, dates) => api.request(`/integrations/sync/${companyId}`, { method: 'POST', body: JSON.stringify(dates) }),
+      getBulkMatch: () => api.request('/integrations/bulk-match'),
+      linkInvoiceCustomer: (companyId, invoiceCustomerId) => api.request('/integrations/link', { method: 'POST', body: JSON.stringify({ companyId, invoiceCustomerId }) }),
+      unlinkInvoiceCustomer: (companyId) => api.request('/integrations/unlink', { method: 'POST', body: JSON.stringify({ companyId }) })
     };
 
     // Reusable Spinner component
@@ -620,6 +623,246 @@
               </>
             )}
           </main>
+        </div>
+      );
+    }
+
+    // Invoice Matching Modal
+    function InvoiceMatchingModal({ onClose, companies, onRefresh }) {
+      const [loading, setLoading] = useState(true);
+      const [results, setResults] = useState([]);
+      const [crmCompanies, setCrmCompanies] = useState([]);
+      const [saving, setSaving] = useState({});
+      const [filter, setFilter] = useState('all'); // all, suggested, unmatched, linked
+      const [manualSelect, setManualSelect] = useState({}); // { invoiceCustomerId: crmCompanyId }
+      const [searchOverride, setSearchOverride] = useState({}); // { invoiceCustomerId: searchText }
+
+      useEffect(() => {
+        loadMatches();
+      }, []);
+
+      const loadMatches = async () => {
+        setLoading(true);
+        try {
+          const data = await api.getBulkMatch();
+          setResults(data.results || []);
+          setCrmCompanies(data.crmCompanies || []);
+        } catch (err) {
+          console.error('Failed to load bulk match:', err);
+        }
+        setLoading(false);
+      };
+
+      const handleLink = async (companyId, invoiceCustomerId) => {
+        setSaving(s => ({ ...s, [invoiceCustomerId]: true }));
+        try {
+          await api.linkInvoiceCustomer(companyId, invoiceCustomerId);
+          // Update local state
+          setResults(prev => prev.map(r =>
+            r.invoiceCustomer.id === invoiceCustomerId
+              ? { ...r, status: 'linked', match: crmCompanies.find(c => c.id === companyId) || r.match, score: 100 }
+              : r
+          ));
+          setManualSelect(s => { const n = {...s}; delete n[invoiceCustomerId]; return n; });
+          if (onRefresh) onRefresh();
+        } catch (err) {
+          alert('Failed to link: ' + (err.message || err));
+        }
+        setSaving(s => ({ ...s, [invoiceCustomerId]: false }));
+      };
+
+      const handleUnlink = async (companyId, invoiceCustomerId) => {
+        setSaving(s => ({ ...s, [invoiceCustomerId]: true }));
+        try {
+          await api.unlinkInvoiceCustomer(companyId);
+          setResults(prev => prev.map(r =>
+            r.invoiceCustomer.id === invoiceCustomerId
+              ? { ...r, status: 'unmatched', match: null, score: 0 }
+              : r
+          ));
+          if (onRefresh) onRefresh();
+        } catch (err) {
+          alert('Failed to unlink: ' + (err.message || err));
+        }
+        setSaving(s => ({ ...s, [invoiceCustomerId]: false }));
+      };
+
+      const filtered = results.filter(r => filter === 'all' || r.status === filter);
+      const counts = { all: results.length, suggested: 0, unmatched: 0, linked: 0 };
+      results.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+
+      // Available (unlinked) CRM companies for manual selection
+      const linkedCrmIds = new Set(results.filter(r => r.status === 'linked' && r.match).map(r => r.match.id));
+      const availableCrmCompanies = crmCompanies.filter(c => !c.invoice_customer_id);
+
+      return (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-5xl my-4">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
+              <div>
+                <h2 className="text-lg font-bold">Invoice Customer Matching</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Link invoice app customers to CRM companies</p>
+              </div>
+              <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-xl">&times;</button>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex gap-1 p-3 border-b dark:border-gray-700 flex-wrap">
+              {[
+                { key: 'all', label: `All (${counts.all})` },
+                { key: 'suggested', label: `Suggested (${counts.suggested})`, color: 'text-yellow-600' },
+                { key: 'unmatched', label: `Unmatched (${counts.unmatched})`, color: 'text-red-600' },
+                { key: 'linked', label: `Linked (${counts.linked})`, color: 'text-green-600' }
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`px-3 py-1.5 text-sm rounded ${filter === f.key ? 'bg-blue-600 text-white' : `bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 ${f.color || ''}`}`}
+                >{f.label}</button>
+              ))}
+            </div>
+
+            {/* Content */}
+            <div className="p-4 max-h-[65vh] overflow-y-auto">
+              {loading ? (
+                <div className="flex items-center gap-2 py-12 justify-center">
+                  <Spinner size="md" />
+                  <span className="text-gray-500">Loading customers and matching...</span>
+                </div>
+              ) : filtered.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No results for this filter.</p>
+              ) : (
+                <div className="space-y-2">
+                  {filtered.map(r => {
+                    const ic = r.invoiceCustomer;
+                    const icLabel = ic.companyName || ic.name || 'Unknown';
+                    const isSaving = saving[ic.id];
+                    const overrideId = manualSelect[ic.id];
+                    const searchText = searchOverride[ic.id] || '';
+
+                    // Filter available companies by search text for this row
+                    const filteredCompanies = searchText
+                      ? availableCrmCompanies.filter(c => c.name.toLowerCase().includes(searchText.toLowerCase()))
+                      : availableCrmCompanies;
+
+                    return (
+                      <div key={ic.id} className={`border rounded-lg p-3 ${
+                        r.status === 'linked' ? 'border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10' :
+                        r.status === 'suggested' ? 'border-yellow-300 dark:border-yellow-700 bg-yellow-50/50 dark:bg-yellow-900/10' :
+                        'border-gray-200 dark:border-gray-700'
+                      }`}>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                          {/* Invoice Customer Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm">{icLabel}</span>
+                              {ic.companyName && ic.name && ic.companyName !== ic.name && (
+                                <span className="text-xs text-gray-500">({ic.name})</span>
+                              )}
+                              <span className={`px-1.5 py-0.5 text-xs rounded ${
+                                r.status === 'linked' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' :
+                                r.status === 'suggested' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300' :
+                                'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                              }`}>{r.status}{r.score > 0 && r.status !== 'linked' ? ` ${r.score}%` : ''}</span>
+                            </div>
+                            {ic.phone && <div className="text-xs text-gray-500 mt-0.5">{ic.phone}</div>}
+                          </div>
+
+                          {/* Arrow */}
+                          <div className="hidden sm:block text-gray-400 text-lg">→</div>
+
+                          {/* CRM Match / Selection */}
+                          <div className="flex-1 min-w-0">
+                            {r.status === 'linked' ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-green-700 dark:text-green-300">{r.match?.name}</span>
+                                <button
+                                  onClick={() => handleUnlink(r.match.id, ic.id)}
+                                  disabled={isSaving}
+                                  className="px-2 py-0.5 text-xs bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/60 disabled:opacity-50"
+                                >{isSaving ? '...' : 'Unlink'}</button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                {/* Show suggested match if any */}
+                                {r.match && !overrideId && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm text-yellow-700 dark:text-yellow-300">{r.match.name}</span>
+                                    <button
+                                      onClick={() => handleLink(r.match.id, ic.id)}
+                                      disabled={isSaving}
+                                      className="px-2 py-0.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                                    >{isSaving ? '...' : 'Confirm'}</button>
+                                    <button
+                                      onClick={() => setManualSelect(s => ({ ...s, [ic.id]: 'manual' }))}
+                                      className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
+                                    >Change</button>
+                                  </div>
+                                )}
+                                {/* Manual selection dropdown */}
+                                {(!r.match || overrideId) && (
+                                  <div className="flex items-center gap-2">
+                                    <div className="relative flex-1">
+                                      <input
+                                        type="text"
+                                        placeholder="Search CRM companies..."
+                                        value={searchText}
+                                        onChange={e => setSearchOverride(s => ({ ...s, [ic.id]: e.target.value }))}
+                                        className="w-full px-2 py-1 text-sm border rounded dark:bg-gray-700 dark:border-gray-600"
+                                      />
+                                      {searchText && filteredCompanies.length > 0 && (
+                                        <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded shadow-lg max-h-40 overflow-y-auto">
+                                          {filteredCompanies.slice(0, 10).map(c => (
+                                            <button
+                                              key={c.id}
+                                              onClick={() => {
+                                                setManualSelect(s => ({ ...s, [ic.id]: c.id }));
+                                                setSearchOverride(s => ({ ...s, [ic.id]: c.name }));
+                                              }}
+                                              className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 truncate"
+                                            >{c.name}</button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {overrideId && overrideId !== 'manual' && (
+                                      <button
+                                        onClick={() => handleLink(overrideId, ic.id)}
+                                        disabled={isSaving}
+                                        className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 whitespace-nowrap"
+                                      >{isSaving ? '...' : 'Link'}</button>
+                                    )}
+                                    {overrideId && (
+                                      <button
+                                        onClick={() => {
+                                          setManualSelect(s => { const n = {...s}; delete n[ic.id]; return n; });
+                                          setSearchOverride(s => { const n = {...s}; delete n[ic.id]; return n; });
+                                        }}
+                                        className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300 dark:hover:bg-gray-500"
+                                      >Cancel</button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-between items-center p-4 border-t dark:border-gray-700">
+              <div className="text-sm text-gray-500">
+                {counts.linked} of {counts.all} customers linked
+              </div>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300 dark:hover:bg-gray-500">Close</button>
+            </div>
+          </div>
         </div>
       );
     }
@@ -3071,6 +3314,7 @@
       const [bulkFollowNote, setBulkFollowNote] = useState('');
       const [bulkLoading, setBulkLoading] = useState(false);
       const [showImportModal, setShowImportModal] = useState(false);
+      const [showInvoiceMatching, setShowInvoiceMatching] = useState(false);
       const perPage = 25;
 
       useEffect(() => {
@@ -3251,7 +3495,13 @@
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <h2 className="text-xl sm:text-2xl font-bold">Companies ({sorted.length})</h2>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setShowInvoiceMatching(true)}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 text-sm"
+              >
+                Invoice Matching
+              </button>
               <button
                 onClick={() => setShowImportModal(true)}
                 className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 text-sm"
@@ -3551,6 +3801,13 @@
             <CSVImportModal
               onClose={() => setShowImportModal(false)}
               onImported={onRefresh}
+            />
+          )}
+          {showInvoiceMatching && (
+            <InvoiceMatchingModal
+              onClose={() => setShowInvoiceMatching(false)}
+              companies={companies}
+              onRefresh={onRefresh}
             />
           )}
         </div>
