@@ -5,37 +5,13 @@
 - [x] UX improvements (dark mode, spinners, pagination, auto-link activities)
 - [x] Employee ID linking for all users
 - [x] Company management (notes, tags, follow-ups, full-page view, dashboard widget)
+- [x] Company Discovery Tool (Google Places API, one-click add, duplicate prevention)
+- [x] Search & Filter Improvements (search contact/phone/email, follow-up filter, customer/prospect filter, sortable columns)
+- [x] Email Integration (send from company page, editable templates, track as activities, Resend API)
+- [x] Reporting & Analytics (activity chart, conversion funnel, employee performance, pipeline breakdown, date range)
+- [x] Mobile/iPad responsive UI improvements
 
 ## Up Next
-
-### 1. Company Discovery Tool
-Find new fencing, landscaping, hardscaping, construction, and handyman companies to prospect.
-- [ ] Add "Discover Companies" tab or section
-- [ ] Search by industry type and location (city/state/zip radius)
-- [ ] Display results with name, phone, address, website
-- [ ] One-click "Add to CRM" button from search results
-- [ ] Prevent duplicate imports (match by name + city)
-- [ ] Target industries: Fencing, Landscaping, Hardscaping, Construction, Handyman
-
-### 2. Search & Filter Improvements
-- [ ] Search by contact name, phone, email across companies
-- [ ] Filter by follow-up status (overdue, upcoming, none)
-- [ ] Filter by customer vs prospect
-- [ ] Combine multiple filters (type + tag + status)
-- [ ] Sort columns (name, last activity, last order date)
-
-### 3. Email Integration
-- [ ] Send emails directly from company page
-- [ ] Email templates (intro, follow-up, pricing request)
-- [ ] Track sent emails as activities
-- [ ] Pre-fill recipient from company email
-
-### 4. Reporting & Analytics
-- [ ] Call activity chart (calls per day/week/month)
-- [ ] Conversion funnel (contacted -> interested -> customer)
-- [ ] Employee performance (calls per person, conversion rate)
-- [ ] Company pipeline breakdown (by type, by tag, by status)
-- [ ] Date range selector for all reports
 
 ### 5. Bulk Actions
 - [ ] Select multiple companies with checkboxes

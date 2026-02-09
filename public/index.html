@@ -186,7 +186,28 @@
         if (endDate) params.append('end_date', endDate);
         return api.request(`/reports/employees?${params}`);
       },
-      getPipelineReport: () => api.request('/reports/pipeline')
+      getPipelineReport: () => api.request('/reports/pipeline'),
+
+      // Bulk Actions
+      bulkTags: (companyIds, tags, action) => api.request('/companies/bulk/tags', { method: 'POST', body: JSON.stringify({ companyIds, tags, action }) }),
+      bulkFollowUp: (companyIds, follow_up_date, follow_up_note) => api.request('/companies/bulk/follow-up', { method: 'POST', body: JSON.stringify({ companyIds, follow_up_date, follow_up_note }) }),
+      bulkExport: async (companyIds) => {
+        const token = localStorage.getItem('token');
+        const resp = await fetch(`${api.baseUrl}/companies/bulk/export`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ companyIds })
+        });
+        if (!resp.ok) throw new Error('Export failed');
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'companies-export.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      bulkDelete: (companyIds) => api.request('/companies/bulk/delete', { method: 'POST', body: JSON.stringify({ companyIds }) })
     };
 
     // Reusable Spinner component
@@ -2367,6 +2388,13 @@
       const [editingCompany, setEditingCompany] = useState(null);
       const [currentPage, setCurrentPage] = useState(1);
       const [allTags, setAllTags] = useState([]);
+      const [selectedIds, setSelectedIds] = useState(new Set());
+      const [bulkAction, setBulkAction] = useState(null); // 'tag', 'followup', 'delete'
+      const [bulkTagInput, setBulkTagInput] = useState('');
+      const [bulkTagAction, setBulkTagAction] = useState('add');
+      const [bulkFollowDate, setBulkFollowDate] = useState('');
+      const [bulkFollowNote, setBulkFollowNote] = useState('');
+      const [bulkLoading, setBulkLoading] = useState(false);
       const perPage = 25;
 
       useEffect(() => {
@@ -2468,10 +2496,85 @@
         return days;
       };
 
+      const toggleSelect = (id) => {
+        const next = new Set(selectedIds);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        setSelectedIds(next);
+      };
+
+      const toggleSelectAll = () => {
+        if (selectedIds.size === paginatedCompanies.length) {
+          setSelectedIds(new Set());
+        } else {
+          setSelectedIds(new Set(paginatedCompanies.map(c => c.id)));
+        }
+      };
+
+      const handleBulkTags = async () => {
+        if (!bulkTagInput.trim()) return;
+        setBulkLoading(true);
+        try {
+          const tags = bulkTagInput.split(',').map(t => t.trim()).filter(Boolean);
+          await api.bulkTags([...selectedIds], tags, bulkTagAction);
+          await onRefresh();
+          setSelectedIds(new Set());
+          setBulkAction(null);
+          setBulkTagInput('');
+        } catch (err) {
+          alert('Failed to update tags: ' + err.message);
+        } finally {
+          setBulkLoading(false);
+        }
+      };
+
+      const handleBulkFollowUp = async () => {
+        if (!bulkFollowDate) return;
+        setBulkLoading(true);
+        try {
+          await api.bulkFollowUp([...selectedIds], bulkFollowDate, bulkFollowNote);
+          await onRefresh();
+          setSelectedIds(new Set());
+          setBulkAction(null);
+          setBulkFollowDate('');
+          setBulkFollowNote('');
+        } catch (err) {
+          alert('Failed to set follow-up: ' + err.message);
+        } finally {
+          setBulkLoading(false);
+        }
+      };
+
+      const handleBulkExport = async () => {
+        setBulkLoading(true);
+        try {
+          await api.bulkExport([...selectedIds]);
+        } catch (err) {
+          alert('Failed to export: ' + err.message);
+        } finally {
+          setBulkLoading(false);
+        }
+      };
+
+      const handleBulkDelete = async () => {
+        if (!confirm(`Are you sure you want to delete ${selectedIds.size} companies? This cannot be undone.`)) return;
+        setBulkLoading(true);
+        try {
+          await api.bulkDelete([...selectedIds]);
+          await onRefresh();
+          setSelectedIds(new Set());
+          setBulkAction(null);
+        } catch (err) {
+          alert('Failed to delete: ' + err.message);
+        } finally {
+          setBulkLoading(false);
+        }
+      };
+
       return (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">Companies ({sorted.length})</h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-bold">Companies ({sorted.length})</h2>
             <button
               onClick={handleCreateCompany}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
@@ -2531,10 +2634,84 @@
             </select>
           </div>
 
+          {/* Bulk Actions Toolbar */}
+          {selectedIds.size > 0 && (
+            <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 sm:p-4">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  {selectedIds.size} selected
+                </span>
+                <button onClick={() => setBulkAction('tag')} className="px-3 py-1.5 text-xs sm:text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                  Tags
+                </button>
+                <button onClick={() => setBulkAction('followup')} className="px-3 py-1.5 text-xs sm:text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700">
+                  Follow-up
+                </button>
+                <button onClick={handleBulkExport} disabled={bulkLoading} className="px-3 py-1.5 text-xs sm:text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
+                  {bulkLoading ? 'Exporting...' : 'Export CSV'}
+                </button>
+                {user?.role === 'admin' && (
+                  <button onClick={handleBulkDelete} disabled={bulkLoading} className="px-3 py-1.5 text-xs sm:text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">
+                    Delete
+                  </button>
+                )}
+                <button onClick={() => { setSelectedIds(new Set()); setBulkAction(null); }} className="px-3 py-1.5 text-xs sm:text-sm bg-gray-400 text-white rounded hover:bg-gray-500 ml-auto">
+                  Clear
+                </button>
+              </div>
+
+              {/* Bulk Tag Panel */}
+              {bulkAction === 'tag' && (
+                <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border dark:border-gray-700 flex flex-wrap gap-2 items-end">
+                  <div className="flex-1 min-w-[150px]">
+                    <label className="block text-xs font-medium mb-1">Tags (comma separated)</label>
+                    <input type="text" value={bulkTagInput} onChange={(e) => setBulkTagInput(e.target.value)}
+                      className="w-full px-3 py-1.5 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700" placeholder="tag1, tag2" />
+                  </div>
+                  <select value={bulkTagAction} onChange={(e) => setBulkTagAction(e.target.value)}
+                    className="px-3 py-1.5 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700">
+                    <option value="add">Add Tags</option>
+                    <option value="remove">Remove Tags</option>
+                  </select>
+                  <button onClick={handleBulkTags} disabled={bulkLoading} className="px-4 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">
+                    {bulkLoading ? 'Updating...' : 'Apply'}
+                  </button>
+                </div>
+              )}
+
+              {/* Bulk Follow-up Panel */}
+              {bulkAction === 'followup' && (
+                <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border dark:border-gray-700 flex flex-wrap gap-2 items-end">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Follow-up Date</label>
+                    <input type="date" value={bulkFollowDate} onChange={(e) => setBulkFollowDate(e.target.value)}
+                      className="px-3 py-1.5 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700" />
+                  </div>
+                  <div className="flex-1 min-w-[150px]">
+                    <label className="block text-xs font-medium mb-1">Note (optional)</label>
+                    <input type="text" value={bulkFollowNote} onChange={(e) => setBulkFollowNote(e.target.value)}
+                      className="w-full px-3 py-1.5 text-sm border dark:border-gray-600 rounded bg-white dark:bg-gray-700" placeholder="Follow-up reason..." />
+                  </div>
+                  <button onClick={handleBulkFollowUp} disabled={bulkLoading} className="px-4 py-1.5 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50">
+                    {bulkLoading ? 'Setting...' : 'Apply'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
+                  <th className="px-3 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={paginatedCompanies.length > 0 && selectedIds.size === paginatedCompanies.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                  </th>
                   <th
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
                     onClick={() => { if (sortBy === 'name') setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); else { setSortBy('name'); setSortDir('asc'); } }}
@@ -2569,7 +2746,15 @@
                   const daysSinceEstimate = calculateDaysSince(company.last_estimate_date);
 
                   return (
-                    <tr key={company.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <tr key={company.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedIds.has(company.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                      <td className="px-3 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(company.id)}
+                          onChange={() => toggleSelect(company.id)}
+                          className="w-4 h-4 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4">
                         <button
                           onClick={() => onViewCompany(company.id)}

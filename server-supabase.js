@@ -1007,6 +1007,139 @@ app.get('/stats', authenticateToken, async (req, res) => {
 });
 
 // ============================================
+// BULK ACTIONS ROUTES
+// ============================================
+
+// Bulk add/remove tags
+app.post('/companies/bulk/tags', authenticateToken, async (req, res) => {
+  try {
+    const { companyIds, tags, action } = req.body; // action: 'add' or 'remove'
+    if (!companyIds?.length || !tags?.length) {
+      return res.status(400).json({ error: 'companyIds and tags are required' });
+    }
+
+    const { data: companies, error: fetchErr } = await supabase
+      .from('companies')
+      .select('id, tags')
+      .in('id', companyIds);
+    if (fetchErr) throw fetchErr;
+
+    let updated = 0;
+    for (const company of companies) {
+      let existing = [];
+      try { existing = JSON.parse(company.tags || '[]'); } catch (e) { existing = []; }
+
+      let newTags;
+      if (action === 'remove') {
+        newTags = existing.filter(t => !tags.includes(t));
+      } else {
+        newTags = [...new Set([...existing, ...tags])];
+      }
+
+      const { error } = await supabase
+        .from('companies')
+        .update({ tags: JSON.stringify(newTags), updated_at: new Date().toISOString() })
+        .eq('id', company.id);
+      if (!error) updated++;
+    }
+
+    res.json({ message: `Updated tags for ${updated} companies` });
+  } catch (err) {
+    console.error('Error bulk updating tags:', err);
+    res.status(500).json({ error: err.message || 'Failed to bulk update tags' });
+  }
+});
+
+// Bulk set follow-up date
+app.post('/companies/bulk/follow-up', authenticateToken, async (req, res) => {
+  try {
+    const { companyIds, follow_up_date, follow_up_note } = req.body;
+    if (!companyIds?.length || !follow_up_date) {
+      return res.status(400).json({ error: 'companyIds and follow_up_date are required' });
+    }
+
+    const updateData = {
+      follow_up_date,
+      updated_at: new Date().toISOString()
+    };
+    if (follow_up_note !== undefined) updateData.follow_up_note = follow_up_note;
+
+    const { error } = await supabase
+      .from('companies')
+      .update(updateData)
+      .in('id', companyIds);
+    if (error) throw error;
+
+    res.json({ message: `Set follow-up for ${companyIds.length} companies` });
+  } catch (err) {
+    console.error('Error bulk setting follow-up:', err);
+    res.status(500).json({ error: err.message || 'Failed to bulk set follow-up' });
+  }
+});
+
+// Bulk export companies to CSV
+app.post('/companies/bulk/export', authenticateToken, async (req, res) => {
+  try {
+    const { companyIds } = req.body;
+    if (!companyIds?.length) {
+      return res.status(400).json({ error: 'companyIds are required' });
+    }
+
+    const { data: companies, error } = await supabase
+      .from('companies')
+      .select('*')
+      .in('id', companyIds);
+    if (error) throw error;
+
+    const headers = ['Name', 'Type', 'Contact Name', 'Phone', 'Email', 'Website', 'Address', 'City', 'State', 'Zip', 'Is Customer', 'Tags', 'Follow-up Date', 'Follow-up Note', 'Last Order Date', 'Last Estimate Date'];
+    const rows = (companies || []).map(c => {
+      let tags = '';
+      try { tags = JSON.parse(c.tags || '[]').join('; '); } catch (e) {}
+      return [
+        c.name, c.type, c.contact_name, c.phone, c.email, c.website,
+        c.address, c.city, c.state, c.zip,
+        c.is_customer ? 'Yes' : 'No', tags,
+        c.follow_up_date || '', c.follow_up_note || '',
+        c.last_order_date || '', c.last_estimate_date || ''
+      ].map(v => `"${(v || '').toString().replace(/"/g, '""')}"`).join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="companies-export.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('Error bulk exporting:', err);
+    res.status(500).json({ error: err.message || 'Failed to export companies' });
+  }
+});
+
+// Bulk delete companies (admin only)
+app.post('/companies/bulk/delete', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { companyIds } = req.body;
+    if (!companyIds?.length) {
+      return res.status(400).json({ error: 'companyIds are required' });
+    }
+
+    // Delete related activities first
+    await supabase.from('activities').delete().in('company_id', companyIds);
+
+    const { error } = await supabase.from('companies').delete().in('id', companyIds);
+    if (error) throw error;
+
+    res.json({ message: `Deleted ${companyIds.length} companies` });
+  } catch (err) {
+    console.error('Error bulk deleting:', err);
+    res.status(500).json({ error: err.message || 'Failed to bulk delete companies' });
+  }
+});
+
+// ============================================
 // REPORTS ROUTES
 // ============================================
 
