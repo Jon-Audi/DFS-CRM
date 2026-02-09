@@ -1402,19 +1402,91 @@ app.get('/integrations/bulk-match', authenticateToken, async (req, res) => {
   }
 });
 
-// Link an invoice customer to a CRM company
+// Link an invoice customer to a CRM company (with auto-enrich)
 app.post('/integrations/link', authenticateToken, async (req, res) => {
   try {
     const { companyId, invoiceCustomerId } = req.body;
     if (!companyId || !invoiceCustomerId) return res.status(400).json({ error: 'companyId and invoiceCustomerId required' });
 
+    // Get current CRM company data
+    const { data: company, error: compErr } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('id', companyId)
+      .single();
+    if (compErr) throw compErr;
+
+    const updates = {
+      invoice_customer_id: invoiceCustomerId,
+      updated_at: new Date().toISOString()
+    };
+
+    // Get the invoice customer data
+    if (firestore) {
+      const custDoc = await firestore.collection('customers').doc(invoiceCustomerId).get();
+      if (custDoc.exists) {
+        const custData = custDoc.data();
+
+        // Auto-fill missing contact info from invoice customer
+        if (!company.phone && custData.phone) updates.phone = custData.phone;
+        if (!company.email && custData.emailContacts?.length > 0) updates.email = custData.emailContacts[0].email || custData.emailContacts[0];
+        if (!company.contact_name) {
+          const name = [custData.firstName, custData.lastName].filter(Boolean).join(' ');
+          if (name) updates.contact_name = name;
+        }
+        if (!company.address && custData.address) {
+          if (custData.address.street) updates.address = custData.address.street;
+          if (custData.address.city && !company.city) updates.city = custData.address.city;
+          if (custData.address.state && !company.state) updates.state = custData.address.state;
+          if (custData.address.zip && !company.zip) updates.zip = custData.address.zip;
+        }
+      }
+
+      // Check for invoices/estimates and auto-sync dates + type
+      const [estSnap, invSnap] = await Promise.all([
+        firestore.collection('estimates').where('customerId', '==', invoiceCustomerId).get(),
+        firestore.collection('invoices').where('customerId', '==', invoiceCustomerId).get()
+      ]);
+
+      // Find latest estimate date
+      let latestEstDate = null;
+      estSnap.forEach(doc => {
+        const d = doc.data().date;
+        if (d && (!latestEstDate || d > latestEstDate)) latestEstDate = d;
+      });
+      if (latestEstDate) updates.last_estimate_date = latestEstDate;
+
+      // Find latest invoice date
+      let latestInvDate = null;
+      invSnap.forEach(doc => {
+        const d = doc.data().date;
+        if (d && (!latestInvDate || d > latestInvDate)) latestInvDate = d;
+      });
+      if (latestInvDate) updates.last_order_date = latestInvDate;
+
+      // Auto-upgrade Prospect → Customer if they have invoices
+      if (!invSnap.empty && company.type !== 'Customer') {
+        updates.type = 'Customer';
+      }
+    }
+
     const { error } = await supabase
       .from('companies')
-      .update({ invoice_customer_id: invoiceCustomerId, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', companyId);
     if (error) throw error;
 
-    res.json({ message: 'Linked successfully' });
+    // Build a summary of what was auto-updated
+    const autoUpdated = [];
+    if (updates.type === 'Customer' && company.type !== 'Customer') autoUpdated.push('type → Customer');
+    if (updates.last_order_date) autoUpdated.push('last order date synced');
+    if (updates.last_estimate_date) autoUpdated.push('last estimate date synced');
+    if (updates.phone && !company.phone) autoUpdated.push('phone added');
+    if (updates.email && !company.email) autoUpdated.push('email added');
+    if (updates.contact_name && !company.contact_name) autoUpdated.push('contact name added');
+    if (updates.city && !company.city) autoUpdated.push('address added');
+
+    res.json({ message: 'Linked successfully', autoUpdated });
   } catch (err) {
     console.error('Error linking:', err);
     res.status(500).json({ error: err.message || 'Failed to link' });

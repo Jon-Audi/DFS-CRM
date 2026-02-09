@@ -653,10 +653,12 @@
         setLoading(false);
       };
 
+      const [linkFeedback, setLinkFeedback] = useState({}); // { invoiceCustomerId: ['type → Customer', ...] }
+
       const handleLink = async (companyId, invoiceCustomerId) => {
         setSaving(s => ({ ...s, [invoiceCustomerId]: true }));
         try {
-          await api.linkInvoiceCustomer(companyId, invoiceCustomerId);
+          const result = await api.linkInvoiceCustomer(companyId, invoiceCustomerId);
           // Update local state
           setResults(prev => prev.map(r =>
             r.invoiceCustomer.id === invoiceCustomerId
@@ -664,6 +666,11 @@
               : r
           ));
           setManualSelect(s => { const n = {...s}; delete n[invoiceCustomerId]; return n; });
+          // Show auto-update feedback
+          if (result.autoUpdated?.length > 0) {
+            setLinkFeedback(f => ({ ...f, [invoiceCustomerId]: result.autoUpdated }));
+            setTimeout(() => setLinkFeedback(f => { const n = {...f}; delete n[invoiceCustomerId]; return n; }), 8000);
+          }
           if (onRefresh) onRefresh();
         } catch (err) {
           alert('Failed to link: ' + (err.message || err));
@@ -775,13 +782,20 @@
                           {/* CRM Match / Selection */}
                           <div className="flex-1 min-w-0">
                             {r.status === 'linked' ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-green-700 dark:text-green-300">{r.match?.name}</span>
-                                <button
-                                  onClick={() => handleUnlink(r.match.id, ic.id)}
-                                  disabled={isSaving}
-                                  className="px-2 py-0.5 text-xs bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/60 disabled:opacity-50"
-                                >{isSaving ? '...' : 'Unlink'}</button>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-green-700 dark:text-green-300">{r.match?.name}</span>
+                                  <button
+                                    onClick={() => handleUnlink(r.match.id, ic.id)}
+                                    disabled={isSaving}
+                                    className="px-2 py-0.5 text-xs bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/60 disabled:opacity-50"
+                                  >{isSaving ? '...' : 'Unlink'}</button>
+                                </div>
+                                {linkFeedback[ic.id] && (
+                                  <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">
+                                    Auto-updated: {linkFeedback[ic.id].join(', ')}
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               <div className="flex flex-col gap-1.5">
@@ -3690,12 +3704,17 @@
                         />
                       </td>
                       <td className="px-6 py-4">
-                        <button
-                          onClick={() => onViewCompany(company.id)}
-                          className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline text-left"
-                        >
-                          {company.name}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => onViewCompany(company.id)}
+                            className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline text-left"
+                          >
+                            {company.name}
+                          </button>
+                          {company.invoice_customer_id && (
+                            <span title="Linked to Invoice App" className="text-green-500 text-xs">$</span>
+                          )}
+                        </div>
                         {company.website && <div className="text-sm text-gray-500 dark:text-gray-400">{company.website}</div>}
                         {(() => { try { const t = JSON.parse(company.tags || '[]'); return t.length > 0 ? (
                           <div className="flex flex-wrap gap-1 mt-1">{t.map(tag => (
