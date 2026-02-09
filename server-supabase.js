@@ -26,6 +26,25 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Initialize Firebase Admin (for invoice app integration)
+let firestore = null;
+try {
+  const admin = require('firebase-admin');
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (serviceAccountJson) {
+    const serviceAccount = JSON.parse(serviceAccountJson);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    firestore = admin.firestore();
+    console.log('✅ Firebase Admin initialized for invoice integration');
+  } else {
+    console.log('ℹ️ FIREBASE_SERVICE_ACCOUNT not set - invoice integration disabled');
+  }
+} catch (err) {
+  console.error('⚠️ Firebase Admin init error (invoice integration disabled):', err.message);
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -1003,6 +1022,235 @@ app.get('/stats', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Error fetching stats:', err);
     res.status(500).json({ error: err.message || 'Failed to fetch stats' });
+  }
+});
+
+// ============================================
+// ============================================
+// INVOICE APP INTEGRATION ROUTES
+// ============================================
+
+// Search invoice app customers (match by name)
+app.get('/integrations/invoice-customers', authenticateToken, async (req, res) => {
+  try {
+    if (!firestore) return res.status(503).json({ error: 'Invoice integration not configured' });
+
+    const { search } = req.query;
+    const snapshot = await firestore.collection('customers').get();
+    const customers = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const fullName = [data.firstName, data.lastName].filter(Boolean).join(' ');
+      const companyName = data.companyName || '';
+
+      // If search provided, filter
+      if (search) {
+        const s = search.toLowerCase();
+        if (!fullName.toLowerCase().includes(s) && !companyName.toLowerCase().includes(s)) return;
+      }
+
+      customers.push({
+        id: doc.id,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        companyName: data.companyName,
+        phone: data.phone,
+        customerType: data.customerType,
+        emailContacts: data.emailContacts || [],
+        address: data.address
+      });
+    });
+
+    res.json(customers);
+  } catch (err) {
+    console.error('Error fetching invoice customers:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch invoice customers' });
+  }
+});
+
+// Get estimates and invoices for a specific invoice-app customer
+app.get('/integrations/customer-data/:customerId', authenticateToken, async (req, res) => {
+  try {
+    if (!firestore) return res.status(503).json({ error: 'Invoice integration not configured' });
+
+    const { customerId } = req.params;
+
+    // Get estimates for this customer
+    const estSnapshot = await firestore.collection('estimates')
+      .where('customerId', '==', customerId)
+      .get();
+
+    const estimates = [];
+    estSnapshot.forEach(doc => {
+      const d = doc.data();
+      estimates.push({
+        id: doc.id,
+        estimateNumber: d.estimateNumber,
+        date: d.date,
+        status: d.status,
+        total: d.total,
+        validUntil: d.validUntil
+      });
+    });
+
+    // Get invoices for this customer
+    const invSnapshot = await firestore.collection('invoices')
+      .where('customerId', '==', customerId)
+      .get();
+
+    const invoices = [];
+    invSnapshot.forEach(doc => {
+      const d = doc.data();
+      invoices.push({
+        id: doc.id,
+        invoiceNumber: d.invoiceNumber,
+        date: d.date,
+        dueDate: d.dueDate,
+        status: d.status,
+        total: d.total,
+        amountPaid: d.amountPaid,
+        balanceDue: d.balanceDue
+      });
+    });
+
+    // Sort by date descending
+    estimates.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    invoices.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    res.json({ estimates, invoices });
+  } catch (err) {
+    console.error('Error fetching customer data:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch customer data' });
+  }
+});
+
+// Auto-match a CRM company to an invoice-app customer and return data
+app.get('/integrations/match/:companyId', authenticateToken, async (req, res) => {
+  try {
+    if (!firestore) return res.status(503).json({ error: 'Invoice integration not configured' });
+
+    // Get the CRM company
+    const { data: company, error: compErr } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('id', req.params.companyId)
+      .single();
+    if (compErr) throw compErr;
+
+    // Search invoice app customers for a match
+    const snapshot = await firestore.collection('customers').get();
+    let match = null;
+    let matchScore = 0;
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const companyName = (data.companyName || '').toLowerCase().trim();
+      const fullName = [data.firstName, data.lastName].filter(Boolean).join(' ').toLowerCase().trim();
+      const crmName = (company.name || '').toLowerCase().trim();
+      const crmContact = (company.contact_name || '').toLowerCase().trim();
+
+      let score = 0;
+
+      // Exact company name match
+      if (companyName && crmName && companyName === crmName) score = 100;
+      // Company name contains or is contained
+      else if (companyName && crmName && (companyName.includes(crmName) || crmName.includes(companyName))) score = 80;
+      // Contact name matches
+      else if (fullName && crmContact && fullName === crmContact) score = 70;
+      // Phone match
+      else if (data.phone && company.phone) {
+        const p1 = data.phone.replace(/\D/g, '').slice(-10);
+        const p2 = company.phone.replace(/\D/g, '').slice(-10);
+        if (p1 && p2 && p1 === p2) score = 90;
+      }
+
+      if (score > matchScore) {
+        matchScore = score;
+        match = { id: doc.id, ...data, matchScore: score };
+      }
+    });
+
+    if (!match || matchScore < 60) {
+      return res.json({ matched: false, company: company.name });
+    }
+
+    // Get estimates and invoices for matched customer
+    const [estSnap, invSnap] = await Promise.all([
+      firestore.collection('estimates').where('customerId', '==', match.id).get(),
+      firestore.collection('invoices').where('customerId', '==', match.id).get()
+    ]);
+
+    const estimates = [];
+    estSnap.forEach(doc => {
+      const d = doc.data();
+      estimates.push({ id: doc.id, estimateNumber: d.estimateNumber, date: d.date, status: d.status, total: d.total });
+    });
+
+    const invoices = [];
+    invSnap.forEach(doc => {
+      const d = doc.data();
+      invoices.push({ id: doc.id, invoiceNumber: d.invoiceNumber, date: d.date, dueDate: d.dueDate, status: d.status, total: d.total, amountPaid: d.amountPaid, balanceDue: d.balanceDue });
+    });
+
+    estimates.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    invoices.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    // Calculate totals
+    const totalEstimates = estimates.reduce((sum, e) => sum + (e.total || 0), 0);
+    const totalInvoiced = invoices.reduce((sum, i) => sum + (i.total || 0), 0);
+    const totalPaid = invoices.reduce((sum, i) => sum + (i.amountPaid || 0), 0);
+    const totalOutstanding = invoices.reduce((sum, i) => sum + (i.balanceDue || 0), 0);
+
+    // Get latest dates for syncing
+    const latestEstimateDate = estimates.length > 0 ? estimates[0].date : null;
+    const latestInvoiceDate = invoices.length > 0 ? invoices[0].date : null;
+
+    res.json({
+      matched: true,
+      matchScore,
+      customer: {
+        id: match.id,
+        name: [match.firstName, match.lastName].filter(Boolean).join(' '),
+        companyName: match.companyName,
+        customerType: match.customerType
+      },
+      estimates,
+      invoices,
+      summary: {
+        totalEstimates,
+        totalInvoiced,
+        totalPaid,
+        totalOutstanding,
+        estimateCount: estimates.length,
+        invoiceCount: invoices.length,
+        latestEstimateDate,
+        latestInvoiceDate
+      }
+    });
+  } catch (err) {
+    console.error('Error matching company:', err);
+    res.status(500).json({ error: err.message || 'Failed to match company' });
+  }
+});
+
+// Sync dates from invoice app to CRM company
+app.post('/integrations/sync/:companyId', authenticateToken, async (req, res) => {
+  try {
+    const { last_estimate_date, last_order_date } = req.body;
+    const updates = { updated_at: new Date().toISOString() };
+    if (last_estimate_date) updates.last_estimate_date = last_estimate_date;
+    if (last_order_date) updates.last_order_date = last_order_date;
+
+    const { error } = await supabase
+      .from('companies')
+      .update(updates)
+      .eq('id', req.params.companyId);
+    if (error) throw error;
+
+    res.json({ message: 'Dates synced successfully' });
+  } catch (err) {
+    console.error('Error syncing dates:', err);
+    res.status(500).json({ error: err.message || 'Failed to sync dates' });
   }
 });
 

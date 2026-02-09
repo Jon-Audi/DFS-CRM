@@ -79,6 +79,10 @@
       "dest": "/server-supabase.js"
     },
     {
+      "src": "/integrations/(.*)",
+      "dest": "/server-supabase.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "/public/index.html"
     }

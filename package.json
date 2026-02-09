@@ -8,17 +8,22 @@
     "dev": "nodemon server-supabase.js",
     "init-db": "node database.js"
   },
-  "keywords": ["crm", "contractors", "sales"],
+  "keywords": [
+    "crm",
+    "contractors",
+    "sales"
+  ],
   "author": "Delaware Fence Solutions",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
     "@supabase/supabase-js": "^2.38.0",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express-rate-limit": "^7.1.5"
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "firebase-admin": "^13.6.1",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
