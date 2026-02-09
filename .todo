@@ -14,4 +14,41 @@
 - [x] CSV Import (file upload, column mapping, preview, duplicate skip, progress bar)
 - [x] User Activity Dashboard (per-employee stats, weekly leaderboard, activity timeline, team view)
 
-## All features complete!
+## Up Next
+
+### 1. Calendar View for Follow-ups
+Visual weekly/monthly calendar showing scheduled follow-ups and calls.
+- [ ] Monthly calendar grid with follow-up dates highlighted
+- [ ] Weekly view with time slots
+- [ ] Click date to see all follow-ups for that day
+- [ ] Click company name to navigate to company page
+- [ ] Color coding: overdue (red), today (yellow), upcoming (green)
+- [ ] Quick-add follow-up from calendar
+
+### 2. Invoice App Integration (DelFenceInvoice <-> DFS CRM)
+Read-only sync from the Firebase/Firestore invoicing app to the CRM.
+- [ ] Add firebase-admin to CRM backend for Firestore reads
+- [ ] Match CRM companies to invoice app customers (by company name / contact name)
+- [ ] API endpoint: GET /integrations/invoices/:companyId - pull estimates & invoices
+- [ ] Show estimate/invoice history on Company Page (dates, amounts, status)
+- [ ] Auto-update last_order_date and last_estimate_date from invoice app data
+- [ ] Dashboard widget: recent invoices, outstanding balances
+- [ ] Manual "Sync Now" button on company page
+
+### 3. Map View
+Plot companies on a map for route planning and territory visualization.
+- [ ] Leaflet.js map (free, no API key required)
+- [ ] Plot all companies with color-coded pins (customer vs prospect)
+- [ ] Click pin to see company details popup
+- [ ] Filter map by type, tag, customer/prospect
+- [ ] Cluster markers when zoomed out
+- [ ] "Plan Route" mode: select multiple pins for optimized route
+
+### 4. File Attachments
+Attach quotes, catalogs, photos, and documents to company records.
+- [ ] File upload UI on Company Page
+- [ ] Supabase Storage for file hosting
+- [ ] Support images, PDFs, and common doc formats
+- [ ] File list with download links and delete
+- [ ] Preview thumbnails for images
+- [ ] Max file size limit (10MB per file)
