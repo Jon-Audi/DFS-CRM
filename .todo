@@ -10,25 +10,8 @@
 - [x] Email Integration (send from company page, editable templates, track as activities, Resend API)
 - [x] Reporting & Analytics (activity chart, conversion funnel, employee performance, pipeline breakdown, date range)
 - [x] Mobile/iPad responsive UI improvements
+- [x] Bulk Actions (select multiple, bulk tag/follow-up/export CSV/delete)
+- [x] CSV Import (file upload, column mapping, preview, duplicate skip, progress bar)
+- [x] User Activity Dashboard (per-employee stats, weekly leaderboard, activity timeline, team view)
 
-## Up Next
-
-### 5. Bulk Actions
-- [ ] Select multiple companies with checkboxes
-- [ ] Bulk add/remove tags
-- [ ] Bulk assign follow-up dates
-- [ ] Bulk export selected companies to CSV
-- [ ] Bulk delete (admin only)
-
-### 6. CSV Import
-- [ ] Upload CSV file with company data
-- [ ] Column mapping UI (match CSV columns to fields)
-- [ ] Preview before import
-- [ ] Skip duplicates option
-- [ ] Import progress indicator
-
-### 7. User Activity Dashboard
-- [ ] Per-employee stats (calls today, this week, this month)
-- [ ] Team leaderboard
-- [ ] Activity timeline per user
-- [ ] Manager view: all team member summaries
+## All features complete!

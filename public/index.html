@@ -210,7 +210,10 @@
       bulkDelete: (companyIds) => api.request('/companies/bulk/delete', { method: 'POST', body: JSON.stringify({ companyIds }) }),
 
       // CSV Import
-      importCompanies: (companies, skipDuplicates) => api.request('/companies/import', { method: 'POST', body: JSON.stringify({ companies, skipDuplicates }) })
+      importCompanies: (companies, skipDuplicates) => api.request('/companies/import', { method: 'POST', body: JSON.stringify({ companies, skipDuplicates }) }),
+
+      // User Dashboard
+      getUserDashboard: () => api.request('/reports/user-dashboard')
     };
 
     // Reusable Spinner component
@@ -522,7 +525,7 @@
           <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 overflow-x-auto">
             <div className="max-w-7xl mx-auto px-2 sm:px-4">
               <div className="flex space-x-1 sm:space-x-6">
-                {['dashboard', 'calling', 'companies', 'discover', 'reports', 'activities', 'employees', ...(user?.role === 'admin' ? ['admin'] : [])].map((tab) => (
+                {['dashboard', 'calling', 'companies', 'discover', 'reports', 'team', 'activities', 'employees', ...(user?.role === 'admin' ? ['admin'] : [])].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => { setViewingCompanyId(null); setActiveTab(tab); }}
@@ -530,7 +533,7 @@
                       activeTab === tab ? 'tab-active' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
                     }`}
                   >
-                    {tab === 'calling' ? '📞 Calling' : tab === 'discover' ? '🔍 Discover' : tab === 'reports' ? '📊 Reports' : tab === 'admin' ? '⚙️ Admin' : tab}
+                    {tab === 'calling' ? '📞 Calling' : tab === 'discover' ? '🔍 Discover' : tab === 'reports' ? '📊 Reports' : tab === 'team' ? '👥 Team' : tab === 'admin' ? '⚙️ Admin' : tab}
                   </button>
                 ))}
               </div>
@@ -603,6 +606,7 @@
                   />
                 )}
                 {activeTab === 'reports' && <Reports />}
+                {activeTab === 'team' && <UserDashboard companies={companies} onViewCompany={setViewingCompanyId} />}
                 {activeTab === 'admin' && user?.role === 'admin' && (
                   <AdminSettings
                     onRefresh={loadData}
@@ -611,6 +615,147 @@
               </>
             )}
           </main>
+        </div>
+      );
+    }
+
+    // User Activity Dashboard Component
+    function UserDashboard({ companies, onViewCompany }) {
+      const [data, setData] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [expandedUser, setExpandedUser] = useState(null);
+
+      useEffect(() => {
+        api.getUserDashboard().then(setData).catch(console.error).finally(() => setLoading(false));
+      }, []);
+
+      if (loading) return <div className="flex items-center gap-2 py-8 justify-center"><Spinner size="lg" /><span>Loading dashboard...</span></div>;
+
+      // Leaderboard: top by calls this week
+      const leaderboard = [...data].sort((a, b) => b.thisWeek.calls - a.thisWeek.calls);
+
+      return (
+        <div className="space-y-6">
+          <h2 className="text-xl sm:text-2xl font-bold">👥 Team Activity Dashboard</h2>
+
+          {/* Leaderboard */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 sm:p-6">
+            <h3 className="text-lg font-semibold mb-4">🏆 Weekly Leaderboard</h3>
+            <div className="space-y-2">
+              {leaderboard.map((emp, idx) => {
+                const medals = ['🥇', '🥈', '🥉'];
+                const medal = idx < 3 ? medals[idx] : `${idx + 1}.`;
+                const maxCalls = leaderboard[0]?.thisWeek.calls || 1;
+                const barWidth = Math.max((emp.thisWeek.calls / maxCalls) * 100, 2);
+
+                return (
+                  <div key={emp.id} className="flex items-center gap-3">
+                    <span className="text-lg w-8 text-center">{medal}</span>
+                    <span className="w-28 sm:w-36 font-medium text-sm truncate">{emp.name}</span>
+                    <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-6 overflow-hidden">
+                      <div
+                        className={`h-full ${idx === 0 ? 'bg-yellow-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-amber-600' : 'bg-blue-500'} flex items-center justify-end pr-2 transition-all duration-500`}
+                        style={{ width: `${barWidth}%` }}
+                      >
+                        <span className="text-xs text-white font-bold">{emp.thisWeek.calls}</span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-gray-500 w-16 text-right">{emp.thisWeek.answered} ans</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Per-Employee Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {data.map(emp => (
+              <div key={emp.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="font-semibold text-base">{emp.name}</h4>
+                  <button
+                    onClick={() => setExpandedUser(expandedUser === emp.id ? null : emp.id)}
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    {expandedUser === emp.id ? 'Hide Timeline' : 'View Timeline'}
+                  </button>
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div>
+                    <div className="font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Today</div>
+                    <div className="text-lg font-bold text-blue-600 dark:text-blue-400">{emp.today.calls}</div>
+                    <div className="text-gray-500">calls</div>
+                    <div className="text-green-600 text-xs">{emp.today.answered} ans</div>
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">This Week</div>
+                    <div className="text-lg font-bold text-blue-600 dark:text-blue-400">{emp.thisWeek.calls}</div>
+                    <div className="text-gray-500">calls</div>
+                    <div className="text-green-600 text-xs">{emp.thisWeek.answered} ans</div>
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">This Month</div>
+                    <div className="text-lg font-bold text-blue-600 dark:text-blue-400">{emp.thisMonth.calls}</div>
+                    <div className="text-gray-500">calls</div>
+                    <div className="text-green-600 text-xs">{emp.thisMonth.answered} ans</div>
+                  </div>
+                </div>
+
+                {/* Extra stats row */}
+                <div className="flex justify-around mt-3 pt-3 border-t dark:border-gray-700 text-xs text-center">
+                  <div>
+                    <span className="text-gray-500">Emails:</span>
+                    <span className="font-bold ml-1">{emp.thisWeek.emails}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Interested:</span>
+                    <span className="font-bold ml-1 text-green-600">{emp.thisWeek.interested}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">All-time calls:</span>
+                    <span className="font-bold ml-1">{emp.allTime.calls}</span>
+                  </div>
+                </div>
+
+                {/* Activity Timeline (expanded) */}
+                {expandedUser === emp.id && (
+                  <div className="mt-3 pt-3 border-t dark:border-gray-700">
+                    <h5 className="text-xs font-medium text-gray-500 uppercase mb-2">Recent Activity</h5>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {emp.recentActivities.length === 0 && (
+                        <p className="text-xs text-gray-400 italic">No recent activity</p>
+                      )}
+                      {emp.recentActivities.map((act, i) => {
+                        const comp = companies.find(c => c.id === act.company_id);
+                        return (
+                          <div key={i} className="flex items-start gap-2 text-xs">
+                            <span className="mt-0.5">{act.type === 'call' ? '📞' : '✉️'}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1">
+                                {comp ? (
+                                  <button onClick={() => onViewCompany(comp.id)} className="text-blue-600 dark:text-blue-400 hover:underline truncate font-medium">
+                                    {comp.name}
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-500">Unknown</span>
+                                )}
+                                {act.answered && <span className="px-1 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded text-xs">Answered</span>}
+                                {act.interested && <span className="px-1 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-xs">Interested</span>}
+                              </div>
+                              {act.notes && <p className="text-gray-500 truncate">{act.notes}</p>}
+                            </div>
+                            <span className="text-gray-400 flex-shrink-0">{new Date(act.date).toLocaleDateString()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       );
     }

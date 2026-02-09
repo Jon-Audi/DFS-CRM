@@ -1433,6 +1433,64 @@ app.get('/reports/pipeline', authenticateToken, async (req, res) => {
   }
 });
 
+// Get user activity dashboard data
+app.get('/reports/user-dashboard', authenticateToken, async (req, res) => {
+  try {
+    const { data: employees, error: empErr } = await supabase.from('employees').select('id, name, active');
+    if (empErr) throw empErr;
+
+    const { data: activities, error: actErr } = await supabase.from('activities').select('*').order('date', { ascending: false });
+    if (actErr) throw actErr;
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+    const weekStartStr = weekStart.toISOString().split('T')[0];
+    const monthStartStr = now.toISOString().substring(0, 7);
+
+    const employeeStats = (employees || []).filter(e => e.active).map(emp => {
+      const empActs = (activities || []).filter(a => a.employee_id === emp.id);
+
+      const today = empActs.filter(a => a.date?.startsWith(todayStr));
+      const thisWeek = empActs.filter(a => a.date >= weekStartStr);
+      const thisMonth = empActs.filter(a => a.date?.startsWith(monthStartStr));
+
+      const countStats = (acts) => ({
+        calls: acts.filter(a => a.type === 'call').length,
+        emails: acts.filter(a => a.type === 'email').length,
+        answered: acts.filter(a => a.answered).length,
+        interested: acts.filter(a => a.interested).length
+      });
+
+      return {
+        id: emp.id,
+        name: emp.name,
+        today: countStats(today),
+        thisWeek: countStats(thisWeek),
+        thisMonth: countStats(thisMonth),
+        allTime: countStats(empActs),
+        recentActivities: empActs.slice(0, 10).map(a => ({
+          type: a.type,
+          date: a.date,
+          answered: a.answered,
+          interested: a.interested,
+          notes: a.notes,
+          company_id: a.company_id
+        }))
+      };
+    });
+
+    // Sort by today's calls desc, then week's calls
+    employeeStats.sort((a, b) => b.today.calls - a.today.calls || b.thisWeek.calls - a.thisWeek.calls);
+
+    res.json(employeeStats);
+  } catch (err) {
+    console.error('Error fetching user dashboard:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch user dashboard' });
+  }
+});
+
 // ============================================
 // DISCOVER ROUTE (Google Places API)
 // ============================================
