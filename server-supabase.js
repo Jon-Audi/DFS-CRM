@@ -1007,6 +1007,80 @@ app.get('/stats', authenticateToken, async (req, res) => {
 });
 
 // ============================================
+// CSV IMPORT ROUTE
+// ============================================
+
+app.post('/companies/import', authenticateToken, async (req, res) => {
+  try {
+    const { companies: importData, skipDuplicates } = req.body;
+    if (!importData?.length) {
+      return res.status(400).json({ error: 'No companies to import' });
+    }
+
+    // Get existing companies for duplicate checking
+    let existingNames = new Set();
+    if (skipDuplicates) {
+      const { data: existing } = await supabase.from('companies').select('name, city');
+      (existing || []).forEach(c => {
+        existingNames.add(`${(c.name || '').toLowerCase().trim()}|${(c.city || '').toLowerCase().trim()}`);
+      });
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    const errors = [];
+
+    for (let i = 0; i < importData.length; i++) {
+      const row = importData[i];
+
+      if (!row.name || !row.name.trim()) {
+        errors.push({ row: i + 1, reason: 'Missing company name' });
+        continue;
+      }
+
+      // Check for duplicate
+      if (skipDuplicates) {
+        const key = `${row.name.toLowerCase().trim()}|${(row.city || '').toLowerCase().trim()}`;
+        if (existingNames.has(key)) {
+          skipped++;
+          continue;
+        }
+        existingNames.add(key);
+      }
+
+      const company = {
+        id: `company_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: row.name.trim(),
+        type: (row.type || 'Other').trim(),
+        contact_name: (row.contact_name || '').trim() || null,
+        phone: (row.phone || '').trim() || null,
+        email: (row.email || '').trim() || null,
+        website: (row.website || '').trim() || null,
+        address: (row.address || '').trim() || null,
+        city: (row.city || '').trim() || null,
+        state: (row.state || '').trim() || null,
+        zip: (row.zip || '').trim() || null,
+        is_customer: row.is_customer === true || row.is_customer === 'Yes' || row.is_customer === 'true',
+        tags: row.tags ? JSON.stringify(row.tags.split(';').map(t => t.trim()).filter(Boolean)) : '[]',
+        notes: row.notes || '[]'
+      };
+
+      const { error } = await supabase.from('companies').insert([company]);
+      if (error) {
+        errors.push({ row: i + 1, reason: error.message });
+      } else {
+        imported++;
+      }
+    }
+
+    res.json({ imported, skipped, errors: errors.slice(0, 10), totalErrors: errors.length });
+  } catch (err) {
+    console.error('Error importing companies:', err);
+    res.status(500).json({ error: err.message || 'Failed to import companies' });
+  }
+});
+
+// ============================================
 // BULK ACTIONS ROUTES
 // ============================================
 
