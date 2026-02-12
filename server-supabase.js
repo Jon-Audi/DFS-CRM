@@ -1465,8 +1465,8 @@ app.post('/integrations/link', authenticateToken, async (req, res) => {
       if (latestInvDate) updates.last_order_date = latestInvDate;
 
       // Auto-upgrade Prospect → Customer if they have invoices
-      if (!invSnap.empty && company.type !== 'Customer') {
-        updates.type = 'Customer';
+      if (!invSnap.empty && !company.is_customer) {
+        updates.is_customer = true;
       }
     }
 
@@ -1478,7 +1478,7 @@ app.post('/integrations/link', authenticateToken, async (req, res) => {
 
     // Build a summary of what was auto-updated
     const autoUpdated = [];
-    if (updates.type === 'Customer' && company.type !== 'Customer') autoUpdated.push('type → Customer');
+    if (updates.is_customer === true && !company.is_customer) autoUpdated.push('marked as Customer');
     if (updates.last_order_date) autoUpdated.push('last order date synced');
     if (updates.last_estimate_date) autoUpdated.push('last estimate date synced');
     if (updates.phone && !company.phone) autoUpdated.push('phone added');
