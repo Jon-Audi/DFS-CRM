@@ -1520,12 +1520,17 @@ app.post('/integrations/fix-customer-status', authenticateToken, async (req, res
     // Get all companies with invoice_customer_id set
     const { data: linkedCompanies, error: fetchErr } = await supabase
       .from('companies')
-      .select('id, invoice_customer_id, is_customer')
+      .select('id, name, invoice_customer_id, is_customer')
       .not('invoice_customer_id', 'is', null);
     if (fetchErr) throw fetchErr;
 
+    console.log(`[Fix Customer Status] Found ${linkedCompanies.length} linked companies`);
+
     let updated = 0;
     let skipped = 0;
+    let alreadyCustomer = 0;
+    let noInvoices = 0;
+    const details = [];
 
     for (const company of linkedCompanies) {
       // Check if they have invoices
@@ -1534,24 +1539,44 @@ app.post('/integrations/fix-customer-status', authenticateToken, async (req, res
         .limit(1)
         .get();
 
-      if (!invSnap.empty && !company.is_customer) {
-        // Mark as customer
+      const hasInvoices = !invSnap.empty;
+
+      if (company.is_customer) {
+        alreadyCustomer++;
+        details.push({ name: company.name, status: 'already_customer' });
+      } else if (!hasInvoices) {
+        noInvoices++;
+        details.push({ name: company.name, status: 'no_invoices' });
+        skipped++;
+      } else {
+        // Has invoices and is not yet a customer - update
+        console.log(`[Fix Customer Status] Updating ${company.name} to customer`);
         const { error } = await supabase
           .from('companies')
           .update({ is_customer: true, updated_at: new Date().toISOString() })
           .eq('id', company.id);
 
-        if (!error) updated++;
-      } else {
-        skipped++;
+        if (!error) {
+          updated++;
+          details.push({ name: company.name, status: 'updated' });
+        } else {
+          console.error(`[Fix Customer Status] Failed to update ${company.name}:`, error);
+          skipped++;
+          details.push({ name: company.name, status: 'error', error: error.message });
+        }
       }
     }
+
+    console.log(`[Fix Customer Status] Results: ${updated} updated, ${alreadyCustomer} already customers, ${noInvoices} no invoices, ${skipped} skipped`);
 
     res.json({
       message: 'Customer status fixed',
       total: linkedCompanies.length,
       updated,
-      skipped
+      skipped,
+      alreadyCustomer,
+      noInvoices,
+      details
     });
   } catch (err) {
     console.error('Error fixing customer status:', err);

@@ -893,8 +893,20 @@
                   {counts.linked} of {counts.all} customers linked
                 </div>
                 {fixResult && (
-                  <div className="text-xs text-green-600 dark:text-green-400">
-                    Fixed: {fixResult.updated} companies marked as customers
+                  <div className="text-xs space-y-0.5">
+                    <div className="text-green-600 dark:text-green-400">
+                      ✓ {fixResult.updated} companies marked as customers
+                    </div>
+                    {fixResult.alreadyCustomer > 0 && (
+                      <div className="text-gray-500">
+                        {fixResult.alreadyCustomer} already customers
+                      </div>
+                    )}
+                    {fixResult.noInvoices > 0 && (
+                      <div className="text-gray-500">
+                        {fixResult.noInvoices} have no invoices (kept as prospects)
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
