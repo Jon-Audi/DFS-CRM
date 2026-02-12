@@ -1512,6 +1512,53 @@ app.post('/integrations/unlink', authenticateToken, async (req, res) => {
   }
 });
 
+// One-time fix: Update all linked companies with invoices to is_customer=true
+app.post('/integrations/fix-customer-status', authenticateToken, async (req, res) => {
+  try {
+    if (!firestore) return res.status(503).json({ error: 'Invoice integration not configured' });
+
+    // Get all companies with invoice_customer_id set
+    const { data: linkedCompanies, error: fetchErr } = await supabase
+      .from('companies')
+      .select('id, invoice_customer_id, is_customer')
+      .not('invoice_customer_id', 'is', null);
+    if (fetchErr) throw fetchErr;
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const company of linkedCompanies) {
+      // Check if they have invoices
+      const invSnap = await firestore.collection('invoices')
+        .where('customerId', '==', company.invoice_customer_id)
+        .limit(1)
+        .get();
+
+      if (!invSnap.empty && !company.is_customer) {
+        // Mark as customer
+        const { error } = await supabase
+          .from('companies')
+          .update({ is_customer: true, updated_at: new Date().toISOString() })
+          .eq('id', company.id);
+
+        if (!error) updated++;
+      } else {
+        skipped++;
+      }
+    }
+
+    res.json({
+      message: 'Customer status fixed',
+      total: linkedCompanies.length,
+      updated,
+      skipped
+    });
+  } catch (err) {
+    console.error('Error fixing customer status:', err);
+    res.status(500).json({ error: err.message || 'Failed to fix customer status' });
+  }
+});
+
 // ============================================
 // CSV IMPORT ROUTE
 // ============================================
