@@ -5481,12 +5481,14 @@
         'Roofing'
       ];
 
-      const handleSearch = async () => {
-        if (searchMode === 'name' && !companyName.trim()) {
+      const runSearch = async (overrideLocation, overrideMode) => {
+        const mode = overrideMode || searchMode;
+        const loc = overrideLocation || location;
+        if (mode === 'name' && !companyName.trim()) {
           setError('Please enter a company name to search for');
           return;
         }
-        if (searchMode === 'industry' && !location.trim()) {
+        if (mode === 'industry' && !loc.trim()) {
           setError('Please enter a location (city, state, or zip code)');
           return;
         }
@@ -5495,12 +5497,11 @@
         setResults([]);
         setAddedIds(new Set());
         try {
-          const query = searchMode === 'name' ? companyName.trim() : `${industry} companies`;
-          const loc = searchMode === 'name' ? location.trim() : location.trim();
-          const data = await api.discoverCompanies(query, loc);
+          const query = mode === 'name' ? companyName.trim() : `${industry} companies`;
+          const data = await api.discoverCompanies(query, loc.trim());
           setResults(data);
           if (data.length === 0) {
-            setError(searchMode === 'name'
+            setError(mode === 'name'
               ? 'No results found. Try a different name or add a location to narrow it down.'
               : 'No results found. Try a different location or industry.');
           }
@@ -5510,6 +5511,8 @@
           setLoading(false);
         }
       };
+
+      const handleSearch = () => runSearch();
 
       const handleAddToCRM = async (place) => {
         setAddingId(place.google_place_id);
@@ -5628,6 +5631,121 @@
                 ? `Search for ${industry.toLowerCase()} companies near a specific location. Results are powered by Google Places.`
                 : 'Search for a specific company by name. Add a location to narrow results.'}
             </p>
+          </div>
+
+          {/* Service Area Quick Search */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 mb-6">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Quick Search by Service Area</h3>
+            <div className="space-y-4">
+              {[
+                {
+                  region: 'Northern Delaware',
+                  areas: [
+                    { label: 'Wilmington', zip: '19801' },
+                    { label: 'Newark', zip: '19711' },
+                    { label: 'Bear', zip: '19701' },
+                    { label: 'Middletown', zip: '19709' },
+                    { label: 'Glasgow', zip: '19702' },
+                    { label: 'Hockessin', zip: '19707' },
+                    { label: 'Pike Creek', zip: '19808' },
+                    { label: 'Claymont', zip: '19703' },
+                    { label: 'New Castle', zip: '19720' },
+                    { label: 'Smyrna', zip: '19977' },
+                  ]
+                },
+                {
+                  region: 'Central Delaware',
+                  areas: [
+                    { label: 'Dover', zip: '19901' },
+                    { label: 'Camden', zip: '19934' },
+                    { label: 'Harrington', zip: '19952' },
+                    { label: 'Milford', zip: '19963' },
+                    { label: 'Felton', zip: '19943' },
+                    { label: 'Magnolia', zip: '19962' },
+                  ]
+                },
+                {
+                  region: 'Southern Delaware',
+                  areas: [
+                    { label: 'Rehoboth Beach', zip: '19971' },
+                    { label: 'Lewes', zip: '19958' },
+                    { label: 'Georgetown', zip: '19947' },
+                    { label: 'Seaford', zip: '19973' },
+                    { label: 'Millsboro', zip: '19966' },
+                    { label: 'Bridgeville', zip: '19933' },
+                  ]
+                },
+                {
+                  region: 'South-East Pennsylvania',
+                  areas: [
+                    { label: 'West Chester', zip: '19380' },
+                    { label: 'Exton', zip: '19341' },
+                    { label: 'Kennett Square', zip: '19348' },
+                    { label: 'Coatesville', zip: '19320' },
+                    { label: 'Oxford', zip: '19363' },
+                    { label: 'Avondale', zip: '19311' },
+                    { label: 'Landenberg', zip: '19350' },
+                    { label: 'Marcus Hook', zip: '19061' },
+                  ]
+                },
+                {
+                  region: 'South New Jersey',
+                  areas: [
+                    { label: 'Salem', zip: '08079' },
+                    { label: 'Woodstown', zip: '08098' },
+                    { label: 'Bridgeton', zip: '08302' },
+                    { label: 'Millville', zip: '08332' },
+                    { label: 'Vineland', zip: '08360' },
+                  ]
+                },
+                {
+                  region: 'Maryland (Cecil County)',
+                  areas: [
+                    { label: 'Elkton', zip: '21921' },
+                    { label: 'North East', zip: '21901' },
+                    { label: 'Chesapeake City', zip: '21915' },
+                    { label: 'Rising Sun', zip: '21911' },
+                  ]
+                }
+              ].map(({ region, areas }) => {
+                const regionCount = areas.reduce((sum, a) => {
+                  return sum + companies.filter(c => (c.zip || '').startsWith(a.zip.slice(0, 4))).length;
+                }, 0);
+                return (
+                  <div key={region}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{region}</span>
+                      {regionCount > 0 && (
+                        <span className="px-1.5 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded">{regionCount} in CRM</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {areas.map(({ label, zip }) => {
+                        const count = companies.filter(c => (c.zip || '').startsWith(zip.slice(0, 4))).length;
+                        return (
+                          <button
+                            key={zip}
+                            onClick={() => {
+                              const loc = `${label}, ${zip}`;
+                              setLocation(loc);
+                              setSearchMode('industry');
+                              runSearch(loc, 'industry');
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
+                          >
+                            <span className="font-medium">{label}</span>
+                            <span className="text-gray-400 dark:text-gray-500">{zip}</span>
+                            {count > 0 && (
+                              <span className="px-1 py-0.5 text-[10px] bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 rounded-full">{count}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Error Message */}
