@@ -1464,8 +1464,8 @@ app.post('/integrations/link', authenticateToken, async (req, res) => {
       });
       if (latestInvDate) updates.last_order_date = latestInvDate;
 
-      // Auto-upgrade Prospect → Customer if they have invoices
-      if (!invSnap.empty && !company.is_customer) {
+      // Auto-upgrade to customer - if they're in the invoice app, they're a customer
+      if (!company.is_customer) {
         updates.is_customer = true;
       }
     }
@@ -1526,57 +1526,38 @@ app.post('/integrations/fix-customer-status', authenticateToken, async (req, res
 
     console.log(`[Fix Customer Status] Found ${linkedCompanies.length} linked companies`);
 
+    // Any company linked to the invoice app is a customer - no Firestore check needed
+    const toUpdate = linkedCompanies.filter(c => !c.is_customer);
+    const alreadyCustomer = linkedCompanies.length - toUpdate.length;
+
+    console.log(`[Fix Customer Status] ${toUpdate.length} to update, ${alreadyCustomer} already customers`);
+
     let updated = 0;
     let skipped = 0;
-    let alreadyCustomer = 0;
-    let noInvoices = 0;
-    const details = [];
 
-    for (const company of linkedCompanies) {
-      // Check if they have invoices
-      const invSnap = await firestore.collection('invoices')
-        .where('customerId', '==', company.invoice_customer_id)
-        .limit(1)
-        .get();
+    if (toUpdate.length > 0) {
+      const ids = toUpdate.map(c => c.id);
+      const { error } = await supabase
+        .from('companies')
+        .update({ is_customer: true, updated_at: new Date().toISOString() })
+        .in('id', ids);
 
-      const hasInvoices = !invSnap.empty;
-
-      if (company.is_customer) {
-        alreadyCustomer++;
-        details.push({ name: company.name, status: 'already_customer' });
-      } else if (!hasInvoices) {
-        noInvoices++;
-        details.push({ name: company.name, status: 'no_invoices' });
-        skipped++;
+      if (!error) {
+        updated = ids.length;
       } else {
-        // Has invoices and is not yet a customer - update
-        console.log(`[Fix Customer Status] Updating ${company.name} to customer`);
-        const { error } = await supabase
-          .from('companies')
-          .update({ is_customer: true, updated_at: new Date().toISOString() })
-          .eq('id', company.id);
-
-        if (!error) {
-          updated++;
-          details.push({ name: company.name, status: 'updated' });
-        } else {
-          console.error(`[Fix Customer Status] Failed to update ${company.name}:`, error);
-          skipped++;
-          details.push({ name: company.name, status: 'error', error: error.message });
-        }
+        console.error('[Fix Customer Status] Bulk update error:', error);
+        skipped = ids.length;
       }
     }
 
-    console.log(`[Fix Customer Status] Results: ${updated} updated, ${alreadyCustomer} already customers, ${noInvoices} no invoices, ${skipped} skipped`);
+    console.log(`[Fix Customer Status] Done: ${updated} updated, ${skipped} skipped`);
 
     res.json({
       message: 'Customer status fixed',
       total: linkedCompanies.length,
       updated,
       skipped,
-      alreadyCustomer,
-      noInvoices,
-      details
+      alreadyCustomer
     });
   } catch (err) {
     console.error('Error fixing customer status:', err);
