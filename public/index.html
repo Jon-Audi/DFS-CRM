@@ -3409,8 +3409,8 @@
         // Customer filter
         let matchesCustomer = true;
         if (customerFilter !== 'all') {
-          if (customerFilter === 'customer') matchesCustomer = company.is_customer === true;
-          else if (customerFilter === 'prospect') matchesCustomer = company.is_customer !== true;
+          if (customerFilter === 'customer') matchesCustomer = !!company.is_customer;
+          else if (customerFilter === 'prospect') matchesCustomer = !company.is_customer;
         }
         return matchesSearch && matchesType && matchesTag && matchesFollowUp && matchesCustomer;
       });
